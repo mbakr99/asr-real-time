@@ -1,0 +1,149 @@
+bool stop = false;
+
+
+void stop_loop(){
+    std::cin.get();
+    stop = true;
+}
+
+
+
+std::mutex mutex;
+std::vector<float> global_buffer;
+size_t buffer_limit = 256*10;
+int count = 0;
+
+
+int callback_func(const void *input, 
+                void *output,
+                unsigned long frameCount, 
+                const PaStreamCallbackTimeInfo *timeInfo, 
+                PaStreamCallbackFlags statusFlags, 
+                void *userData){
+                    std::lock_guard<std::mutex> lock(mutex);
+                    const float* local_buffer = static_cast<const float*>(input);
+                    global_buffer.insert(global_buffer.end(),local_buffer,local_buffer+frameCount);
+                    // std::cout<< "[callback]: size of global buffers at " << count <<
+                    // " is " << global_buffer.size() << std::endl;
+                    // Check if the global buffer has been completely filled to allow the 
+                    // model to process data
+                    if (global_buffer.size() == buffer_limit){
+                        // std::cout<< "[callback]: The global buffer has been filled completely" << std::endl;
+                        // dataFilled = true;
+                    }
+                    count++;
+                    return paContinue;
+                }
+
+
+
+
+void process_data(std::shared_ptr<torchScriptModel> model_ptr,
+                  std::shared_ptr<greedyDecoder> decoder_ptr)
+                  {
+    std::vector<float> local_buffer(256*4);
+    std::vector<char> decoded_out;
+    bool allowProcess;
+    while(!stop){
+        {
+            // Acquire mutex
+            std::lock_guard<std::mutex> lock(mutex);
+            //std::cout<< "[process_data]: copying to local buffer" << std::endl;
+
+
+            // Move data to local buffer when the global buffer is filled 
+            if (global_buffer.size() >= buffer_limit){
+                local_buffer = std::move(global_buffer);
+                allowProcess = true;
+                global_buffer.clear(); // Clear the global buffer
+                //std::cout<< "[process_data]: cleared global buffer" << std::endl;
+            }  
+        }
+
+        if (!local_buffer.empty() && allowProcess){
+            // Get emissions 
+            
+            auto output = model_ptr->pass_forward(local_buffer);
+            
+
+            // Decode
+            decoded_out = decoder_ptr->decode_chars(output); 
+            std::cout<< decoded_out << std::flush;
+        }    
+        else{
+            //std::cout<<"[process_data]: local_buffer is empty" << std::endl;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));        
+    }
+}
+
+                
+int main (int argc, char* argv[]){
+   
+    if (argc < 3){
+        std::cerr<< "[main]: Make sure you are passing the script model path" 
+        << "as well as the tokens text file path " << std::endl;
+    }
+
+    
+    // create a torchScriptModel and load the model
+    std::shared_ptr<torchScriptModel> model_ptr = std::make_shared<torchScriptModel>();
+    std::string model_path = std::string(argv[1]); 
+    // Load the model
+    model_ptr->load_model(model_path);
+
+    // create a greedDecoder 
+    std::string decoder_tokens_path = std::string(argv[2]);
+    std::shared_ptr<greedyDecoder> decoder_ptr = std::make_shared<greedyDecoder>();
+    decoder_ptr->init_vocab(decoder_tokens_path);
+    std::cout<< "[main]: tokens are" << std::endl;
+    for (auto token : decoder_ptr->tokens)
+        std::cout<< token << "," ;
+    std::cout<< std::endl;
+
+    // create a streamHandler instance 
+    streamHandler handler(16000, 256);
+    handler.init_portaudio();
+    handler.open_stream(&callback_func);
+    handler.start_stream();
+
+    // create a thread for processing the audio data and one for waiting 
+    std::thread process_thread(process_data,model_ptr,decoder_ptr); 
+    std::thread wait_thread(stop_loop);
+
+
+
+    while (!stop){
+        
+    }
+
+    
+    process_thread.join(); 
+    wait_thread.join();
+
+    std::cout<< "Finished: " << count << std::endl;
+    // Read the wavfile
+
+    // const std::string wavfile_path = std::string(argv[3]);
+    // std::vector<float> audio_data = readwav(wavfile_path);
+
+
+    // std::cout << "Size of the audio_data is: " << audio_data.size() << std::endl;
+
+    // // pass the wavfile to the torch script modle 
+    // auto output = model_ptr->pass_forward(audio_data);
+
+    // std::cout << "Size of the emssions is: " << output.sizes() << std::endl;
+
+    // std::vector<char> transcription = decoder_ptr->decode_chars(output);
+
+
+    // for (auto val : transcription)
+    //     std::cout << val;
+    
+    // std::cout << std::endl;
+    
+    
+
+
+}
