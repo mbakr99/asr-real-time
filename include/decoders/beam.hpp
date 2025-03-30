@@ -3,6 +3,7 @@
 #include <string>
 #include <stdexcept>
 #include <cstring>
+#include <iostream>
 #include "utils/fst_glog_safe_log.hpp"
 
 
@@ -61,6 +62,9 @@ struct Beam{
     void discount(float discount_amount){
         sequence_score -= discount_amount;
     }
+    void increase_score_by(float add_amount){
+        sequence_score += add_amount;
+    }
     void remove_last_char(){
         sequence.pop_back();
     }
@@ -79,24 +83,40 @@ struct Beam{
         // make sure this does not violate the array bound 
         return at<Container>(begin, last);
     }
-    std::string get_last_word() const {
-        return at<std::string>(last_word_window);
-    }
     bool operator<(const Beam& other_beam) const {
         return get_score() < other_beam.get_score();
     }
     bool operator>(const Beam& other_beam) const {
         return get_score() > other_beam.get_score();
     }
-    // Beam& operator=(const Beam& other){
-    //     this->sequence         = other.sequence; 
-    //     this->sequence_score   = other.sequence_score;
-    //     this->last_word_window = other.last_word_window;
-    // };
+    bool operator==(const Beam& other_beam) const {
+        return (other_beam.get_sequence<std::string>() == get_sequence<std::string>()); 
+    }
+    Beam& operator+=(const Beam& other_beam){ 
+        /*
+            this operator is used to combine beams with the same sequence 
+        */
+        if (!(*this == other_beam)){ // should not be used with different beams
+            return *this; // do not update
+        } 
+        else{
+            this->increase_score_by(other_beam.get_score()); // update the score
+            return *this; // FIXME: what happens to the other beam
+        }
+    }
+  
+
+    // setters 
+    void set_score(float new_score){
+        sequence_score = new_score;
+    }
 
     // getters 
     size_t size() const {return sequence.size();}
     float get_score() const {return sequence_score;}
+    std::string get_last_word() const {
+        return at<std::string>(last_word_window);
+    }
     template <typename Container = std::string>
     Container get_sequence() const {
         if (sequence.empty()){
@@ -123,6 +143,12 @@ struct  beamGreaterThan{
 struct beamHash{
     std::size_t operator()(const Beam& beam){
         return std::hash<std::string>{}(beam.get_sequence<std::string>());
+    }
+};
+
+struct beamEqual{
+    bool operator()(const Beam& l_beam, const Beam& r_beam){
+        return (l_beam == r_beam);
     }
 };
 

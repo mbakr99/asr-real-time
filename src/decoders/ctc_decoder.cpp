@@ -115,7 +115,12 @@ void ctcDecoder::penalize_beam(beam::ctcBeam& beam){
 void ctcDecoder::update_beams_map(const beam::ctcBeam& beam){
     VLOG(5) << "[ctcDecoder/update_beams_map]: adding " << beam.get_sequence<std::string>()
             << " with score: " << beam.get_score() << " to the map.";
-    _beams_map[beam.get_sequence<std::string>()] += beam.get_score() ;
+    if (_beams_map.find(beam.get_sequence<std::string>()) == _beams_map.end()){ // key does not exist
+        _beams_map.insert({beam.get_sequence<std::string>(), beam});
+    }
+    else{
+        _beams_map[beam.get_sequence<std::string>()] += beam; // FIXME: what happens to the other beam
+    }
 }
 
 
@@ -137,10 +142,11 @@ void ctcDecoder::convert_map_to_min_heap(){
     }
 
     // push element to min heap
-    for (const auto& [sequence, score] : _beams_map){
+    for (auto& [sequence, beam] : _beams_map){
         VLOG(6) << "[ctcDecoder/convert_map_to_min_heap]: adding " << sequence
-                << " to heap, score: " << score;
-        _beams_max_heap.emplace(sequence,score);
+                << " to heap, score: " << beam.get_score();
+    
+        _beams_max_heap.push(beam);
         if (_beams_max_heap.size() > _max_num_beams){
             _beams_max_heap.pop();
         }

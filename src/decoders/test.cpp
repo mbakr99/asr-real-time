@@ -70,7 +70,7 @@ int main(int argc, char* argv[]){
     std::cout << "[main]: audio data size : " << audio_data.size() << std::endl; 
     std::cout << "[main]: cutIdx is : " << cut_idx << std::endl; 
     std::cout << "[main]: short audio size: " << short_audio.size() << std::endl;;
-    auto emissions = torch_model.pass_forward(audio_data);
+    auto emissions = torch_model.pass_forward(short_audio);
 
     // load an fst 
     LexiconFst lex_fst;
@@ -94,9 +94,17 @@ int main(int argc, char* argv[]){
     }
 
     if (result_set){
-        auto top_beam = decoding_result.front();
-        auto top_sequence = top_beam.get_sequence();
-        std::cout << top_sequence << std::endl;
+        std::cout << "Top beam are: " << std::endl; 
+        std::cout << "------------------------------------" << std::endl;
+        auto top_beams = decoding_result;
+
+        int i = 0;
+        for (const auto& beam : top_beams){
+            ++i;
+            std::cout << "beam " << i << ": " <<  beam.get_sequence() << "\n"
+                      << "score: " << beam.get_score() << std::endl;
+        }
+
     }
 
 }

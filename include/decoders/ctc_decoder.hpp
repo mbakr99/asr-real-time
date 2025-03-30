@@ -20,7 +20,7 @@ struct decodingInfo{
 class ctcDecoder{
 
 private:
-    std::unordered_map<std::string, float> _beams_map; //FUTURE: I want to use a set instead, and modify the defualt behavior to accmulate score of identical beams
+    std::unordered_map<std::string, beam::ctcBeam> _beams_map; //FUTURE: I want to use a set instead, and modify the defualt behavior to accmulate score of identical beams
     std::priority_queue<
         beam::ctcBeam, 
         std::vector<beam::ctcBeam>,
