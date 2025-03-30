@@ -81,7 +81,7 @@ int main(int argc, char* argv[]){
 
 
     // create a decoder instance >
-    ctcDecoder decoder(tokens_path, 3);
+    ctcDecoder decoder(tokens_path, 10);
     decoder.set_fst(lex_fst);
     std::vector<beam::ctcBeam> decoding_result;
     bool result_set = false;

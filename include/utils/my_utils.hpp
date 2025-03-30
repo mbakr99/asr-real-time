@@ -156,8 +156,12 @@ void clearHeap(std::priority_queue<T, Container, Compare>& queue, unsigned long 
     }
 }
 
+namespace myutils{
+
+double map_to_range(const double& val, const double& min_val, 
+                    const double& max_val, const double& min_range, 
+                    const double& max_range);
+}
 
 
-
-
-#endif
+#endif // MY_UTILS_HPP

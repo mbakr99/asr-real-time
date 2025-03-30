@@ -1,3 +1,6 @@
+#ifndef _ASR_REAL_TIME_BEAM
+#define _ASR_REAL_TIME_BEAM
+
 #include <tuple>
 #include <vector>
 #include <string>
@@ -52,6 +55,8 @@ struct Beam{
         }
     Beam() : sequence_score(1.0f){}
 
+    virtual ~Beam() = default;  // TODO: why does this ensures safe inheritance?
+
     // operators 
     void extend_sequence(char symbol){
         sequence.push_back(symbol);
@@ -61,6 +66,9 @@ struct Beam{
     }
     void discount(float discount_amount){
         sequence_score -= discount_amount;
+    }
+    void zero_out_score(){
+        sequence_score *= 0;
     }
     void increase_score_by(float add_amount){
         sequence_score += add_amount;
@@ -161,7 +169,8 @@ struct ctcBeam : public Beam{
     // constructor
     ctcBeam(){}
     ctcBeam(std::string some_sequence, float score) : Beam{some_sequence, score} {}
-
+    ~ctcBeam(){}
+    
     // operators 
     void set_epsilon_token(char symbol){
         epsilon_token = symbol;
@@ -198,3 +207,7 @@ struct ctcBeam : public Beam{
     }
 };
 }
+
+
+
+#endif // _ASR_REAL_TIME_BEAM

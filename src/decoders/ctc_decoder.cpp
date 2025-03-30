@@ -7,17 +7,15 @@
 // convenience log warning at certain verbosity level 
 #define VLOG_WARNING(verboselevel) if (VLOG_IS_ON(verboselevel)) LOG(WARNING)
 
-ctcDecoder::ctcDecoder(const std::string& path_to_tokens) : _max_num_beams(10){
-    DLOG(INFO) << "[ctcDecoder/constructor]: defualt instance created with "
-               << _max_num_beams << " beams";
+
+ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams) : _max_num_beams(num_beams), _beams_map{_max_num_beams}{
+    DLOG(INFO) << "[ctcDecoder/constructor]: instance created";
     read_tokens_file(path_to_tokens);
+    _beams_map.set_beams_width(_max_num_beams);
     init_beams();
 }
 
-ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams) : _max_num_beams(num_beams){
-    DLOG(INFO) << "[ctcDecoder/constructor]: instance created";
-    read_tokens_file(path_to_tokens);
-    init_beams();
+ctcDecoder::ctcDecoder(const std::string& path_to_tokens) : ctcDecoder::ctcDecoder(path_to_tokens, 10){
 }
 
 
@@ -108,30 +106,23 @@ bool ctcDecoder::is_word_valid(const std::string& word){
 
 
 void ctcDecoder::penalize_beam(beam::ctcBeam& beam){
-    beam.discount(_decoding_info.invalid_word_penalty); //_decoding_info.invalid_word_penalty
+    beam.zero_out_score(); // discount(_decoding_info.invalid_word_penalty);
 }
 
 
 void ctcDecoder::update_beams_map(const beam::ctcBeam& beam){
-    VLOG(5) << "[ctcDecoder/update_beams_map]: adding " << beam.get_sequence<std::string>()
-            << " with score: " << beam.get_score() << " to the map.";
-    if (_beams_map.find(beam.get_sequence<std::string>()) == _beams_map.end()){ // key does not exist
-        _beams_map.insert({beam.get_sequence<std::string>(), beam});
-    }
-    else{
-        _beams_map[beam.get_sequence<std::string>()] += beam; // FIXME: what happens to the other beam
-    }
+    // this methods serves as a proxy to the update_beams_map of class BeamsMap
+    _beams_map.update_beams_map(beam); 
 }
 
 
 void ctcDecoder::clear_beams_map(){
-    VLOG(6) << "[ctcDecoder/clear_beams_map]: clearing beams map";
-    if (!_beams_map.empty()){
-        _beams_map.clear();
-    }
+    _beams_map.clear_beams_map();
 }
 
-
+void ctcDecoder::scale_scores(const int& lower_range, const int& upper_range){
+    _beams_map.scale_beams_score(lower_range, upper_range);
+}
 
 void ctcDecoder::convert_map_to_min_heap(){
     VLOG(6) << "[ctcDecoder/convert_map_to_min_heap]: converting map to min heap for ranking.";
@@ -142,15 +133,34 @@ void ctcDecoder::convert_map_to_min_heap(){
     }
 
     // push element to min heap
-    for (auto& [sequence, beam] : _beams_map){
+    for (auto& [sequence, beam] : _beams_map.get_map()){
         VLOG(6) << "[ctcDecoder/convert_map_to_min_heap]: adding " << sequence
                 << " to heap, score: " << beam.get_score();
-    
+        
         _beams_max_heap.push(beam);
         if (_beams_max_heap.size() > _max_num_beams){
             _beams_max_heap.pop();
         }
-    }           
+    }       
+
+}
+
+
+void ctcDecoder::init_beams_map_with_top_beams(){
+    if (_top_beams.empty()){
+        LOG(WARNING) << "[ctcDecoder/init_beams_map_with_top_beams]: " 
+                     << "no top beams found. Make sure update_top_beams is called first";
+        return;
+    }
+    else{
+        if (!_beams_map.is_empty()){
+            clear_beams_map();
+        }
+        for (const auto& beam : get_top_beams()){
+            update_beams_map(beam);
+        }
+        return;
+    }
 }
 
 
@@ -181,11 +191,6 @@ std::vector<beam::ctcBeam> ctcDecoder::get_top_beams(){
 
 
 void ctcDecoder::decode_step(const torch::Tensor& emission){
-    /*
-        1: loop over the beams 
-        2: expand the beams with tokens 
-        3: update the beam map
-    */
     if (_top_beams.empty()){
         DLOG(WARNING) << "[ctcDecoder/decode_step]: top beams are empty.";
         VLOG_WARNING(6) << "[ctcDecoder/decode_step]: top beams are empty. "
@@ -200,12 +205,15 @@ void ctcDecoder::decode_step(const torch::Tensor& emission){
                 << ", last_word: " << beam.last_word_window.word_begin << beam.last_word_window.word_end;
         expand_beam(beam, emission);
     }
+    static auto limits_tuple = _decoding_info.get_ctc_score_limits(); // FIXME: What happens if I change the limits?
+    scale_scores(std::get<0>(limits_tuple), std::get<1>(limits_tuple));
     update_top_beams();
+    clear_beams_map();
+    init_beams_map_with_top_beams();
     ++step_counter;
 
     // print updated top beams
     VLOG(5) << "[ctcDecoder/decode_step]: top beams are: \n";
-    
     for (size_t i = 0; i < _top_beams.size(); ++i){
         VLOG(5) << i << ": " << _top_beams[i].get_sequence(); 
     }

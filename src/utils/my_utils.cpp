@@ -125,3 +125,14 @@ std::vector<float> readwav(const std::string filename) {
 
 
 }
+
+
+namespace myutils{
+
+    double map_to_range(const double& val, const double& min_val, 
+                        const double& max_val, const double& min_range, 
+                        const double& max_range){
+        return ( (val - min_val) / (max_val - min_val) ) * (max_range - min_range) + min_range;
+    }
+    
+}
