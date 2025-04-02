@@ -1,3 +1,4 @@
+
 #ifndef _ASR_REALTIME_BEAMS_MAP
 #define _ASR_REALTIME_BEAMS_MAP
 
@@ -12,6 +13,7 @@
 
 
 
+
 namespace beam{
 
 
@@ -20,7 +22,7 @@ class BeamsMapWrapper{
     typedef std::unordered_map<std::string, beam::ctcBeam> BeamsMap;
 private:
      BeamsMap _beams_map;
-    int _beams_width = 0;
+    int _beams_width;
     std::vector<double> _beams_score;
 
 
