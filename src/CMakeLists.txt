@@ -26,9 +26,9 @@ message(STATUS "OpenFst found at: ${OpenFst}")
 if (${OpenFst-NOTFOUND})
     message ("Failed to find OpenFST")
 endif()
-
-message("glog_FOUND: ${glog_FOUND}")
-
+find_package(kenlm REQUIRED)
+message(STATUS "found kenlm using kenlm-FOUND: ${kenlm_FOUND}")
+message(STATUS "kenlm libraries using kenlm-LIBRARIES: ${kenlm-INCLUDE_DIRS}")
 
 # Add local include directory 
 include_directories(${MY_PROJECT_ROOT_DIRECTORY}/include)
@@ -46,15 +46,7 @@ target_link_libraries(test PRIVATE glog::glog
                            PRIVATE ${OpenFst})
 
 
-# add_executable(test_beam ${CMAKE_CURRENT_SOURCE_DIR}/decoders/test_beam.cpp
-#                         #${CMAKE_CURRENT_SOURCE_DIR}/decoders/lexicon.cpp
-#                 )
-# target_link_libraries(test_beam 
-#     PRIVATE ${OpenFst}
-#     PRIVATE glog::glog
-# )
-
-# Create Exe 1
+# Create Exe 2
 add_executable(setup ${CMAKE_CURRENT_SOURCE_DIR}/decoders/setup.cpp
                      ${CMAKE_CURRENT_SOURCE_DIR}/decoders/lexicon.cpp
                      )

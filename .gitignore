@@ -10,8 +10,12 @@ test_pcm.wav
 dummy_dict.txt
 */dev/
 dev/
+*/corpus/
+corpus/
 .ipynb
-
+*/data/models
+bfg-report/
+*/bfg-report/
 # Compiled Object files
 **/.DS_Store
 *.slo

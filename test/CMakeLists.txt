@@ -28,6 +28,7 @@ find_package(glog REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(PORTAUDIO REQUIRED IMPORTED_TARGET portaudio-2.0)
 find_package(Torch REQUIRED PATHS ${TORCH_PREFIX_PATH} NO_DEFAULT_PATH)
+find_package(kenlm REQUIRED)
 
 message(STATUS "Torch libraries: ${TORCH_LIBRARIES}")
 get_cmake_property(_variable_names VARIABLES)
@@ -45,9 +46,9 @@ add_executable(scriptModelTest   ${CMAKE_CURRENT_SOURCE_DIR}/models/test_torch_s
                                  ${MY_PROJECT_ROOT_DIRECTORY}/src/models/torch_script_model.cpp)
 add_executable(greedyDecoderTest ${CMAKE_CURRENT_SOURCE_DIR}/decoders/test_greedy_decoder.cpp
                                  ${MY_PROJECT_ROOT_DIRECTORY}/src/decoders/greedy_decoder.cpp)
-
-
-# link target dependencies
+add_executable(ngramsModelTest   ${CMAKE_CURRENT_SOURCE_DIR}/models/test_ngrams_model.cpp
+                                 ${MY_PROJECT_ROOT_DIRECTORY}/src/models/ngrams_model.cpp)
+# # link target dependencies
 target_link_libraries(streamHandlerTest 
     GTest::gtest_main
     glog::glog
@@ -61,4 +62,8 @@ target_link_libraries(scriptModelTest
 target_link_libraries(greedyDecoderTest
     GTest::gtest_main
     ${TORCH_LIBRARIES}
+    glog::glog)
+target_link_libraries(ngramsModelTest
+    GTest::gtest_main
+    kenlm::kenlm
     glog::glog)
