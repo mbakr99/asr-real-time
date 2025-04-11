@@ -12,7 +12,7 @@
 
 
 
-
+using namespace asr;
 
 namespace beam{
 
@@ -21,7 +21,7 @@ class BeamsMapWrapper{
 
     typedef std::unordered_map<std::string, beam::ctcBeam> BeamsMap;
 private:
-     BeamsMap _beams_map;
+    BeamsMap _beams_map;
     int _beams_width;
     std::vector<double> _beams_score;
 
@@ -74,6 +74,7 @@ public:
     
     // functionality 
     void scale_beams_score(const int& lower_bound, const int& upper_bound){
+        
         // map the beams score to a desired rnage
         auto min_val = get_min();
         auto max_val = get_max();
@@ -82,6 +83,7 @@ public:
                 << lower_bound << ", " << upper_bound << "]." << "\n"
                 << "min val: " << min_val.value() << ", max_val: " << max_val.value();
         for (auto& [sequence, beam] : _beams_map){
+            if (beam.get_score() > max_val.value()) LOG(WARNING) << "val is greater than max val";
             beam.set_score(myutils::map_to_range(beam.get_score(), 
                            min_val.value(), max_val.value(), 
                            lower_bound, upper_bound)); 
@@ -100,14 +102,17 @@ public:
         // insert the beam
         if (_beams_map.find(beam.get_sequence<std::string>()) == _beams_map.end()){ // key does not exist
             _beams_map.insert({beam.get_sequence<std::string>(), beam});
+            VLOG(6) << "[BeamsMapWrapper/update_beams_map]: adding its score (" << beam.get_score() << ") to the score vector";
+            _beams_score.push_back(beam.get_score());
         }
         else{
             _beams_map[beam.get_sequence<std::string>()] += beam; // FIXME: what happens to the other
+            VLOG(6) << "[BeamsMapWrapper/update_beams_map]: adding its score (" << beam.get_score() << ") to the score vector";
+            _beams_score.push_back(_beams_map[beam.get_sequence<std::string>()].get_score());
         }
 
         // update the beams score vector 
-        VLOG(6) << "[BeamsMapWrapper/update_beams_map]: adding its score (" << beam.get_score() << ") to the beams map";
-        _beams_score.push_back(beam.get_score());
+        
     }
 
 private:
