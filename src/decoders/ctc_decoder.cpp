@@ -8,15 +8,33 @@
 #define VLOG_WARNING(verboselevel) if (VLOG_IS_ON(verboselevel)) LOG(WARNING)
 
 
-ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams) : _max_num_beams(num_beams), _beams_map{_max_num_beams}{
+// construcotrs 
+ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams = 10) : _max_num_beams(num_beams), _beams_map{_max_num_beams}{
     DLOG(INFO) << "[ctcDecoder/constructor]: instance created";
     read_tokens_file(path_to_tokens);
     _beams_map.set_beams_width(_max_num_beams);
     init_beams();
 }
 
-ctcDecoder::ctcDecoder(const std::string& path_to_tokens) : ctcDecoder::ctcDecoder(path_to_tokens, 10){
-}
+
+ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams, 
+    LexiconFst& fst, const fs::path& path_to_lm_model) : ctcDecoder::ctcDecoder(path_to_tokens, num_beams){
+        set_fst(fst);
+        if (path_to_lm_model.string() != "none"){ // if model is provided 
+            LOG(INFO) << "[ctcDecoder/constructor]: language modle was provided."; 
+            set_lm(path_to_lm_model);
+        }
+        else{
+            // _use_lm_model_flag is false by default (for symmetry)
+            LOG(WARNING) << "[ctcDecoder/constructor]: no language modle was provided."
+                         << "This will decrease decoding accuracy."; 
+        }
+    }
+
+ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams, LexiconFst& fst) : 
+    ctcDecoder::ctcDecoder(path_to_tokens, num_beams){
+        set_fst(fst);
+    }
 
 
 ctcDecoder::~ctcDecoder(){
@@ -24,7 +42,21 @@ ctcDecoder::~ctcDecoder(){
 }
 
 
+
+// intialization and settings related 
 void ctcDecoder::set_fst(LexiconFst& fst){_lex_fst = fst;}
+
+
+bool ctcDecoder::set_lm(const fs::path& path_to_lm_model){
+    LOG(INFO) << "[ctcDecoder/set_lm]: setting lm model at " << path_to_lm_model;
+    bool loading_sucess  = get_lm_model().setup_model_from(path_to_lm_model);
+    if (!loading_sucess){
+        LOG(WARNING) << "[ctcDecoder/set_lm]: failed to load the lm model from " << path_to_lm_model;
+        return false;
+    }
+    _use_lm_model_flag = true;
+    return true;
+}   
 
 void ctcDecoder::init_beams(){
     _top_beams.push_back(beam::ctcBeam());
@@ -58,6 +90,7 @@ void ctcDecoder::read_tokens_file(const std::string& path_to_tokens){
 }
 
 
+// internal steps 
 void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emission){
     // I am assuming that emission is (num_tokens x 1) or (num_tokens) 
     auto emmision_size = emission.sizes();
@@ -79,19 +112,46 @@ void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emi
             auto last_word = new_beam.get_last_word();
             VLOG(5) << "[ctcDecoder/expand_beam]: word is formed: " << last_word;
             if (!is_word_valid(last_word)){ 
-                // reject/penalize this beam TODO: This might need improvement 
+                // reject/penalize this beam 
                 VLOG(6) << "[ctcDecoder/expand_beam]: " << last_word 
                         << " is not valid. Penalizing this beam.";
                 penalize_beam(new_beam); 
 
             }
-            else{ // I think this is stupid but I will leave it for now
+            else{ // word is formed get the lm score 
                 VLOG(6) << "[ctcDecoder/expand_beam]: " << last_word << " is valid";
+                float lm_score = new_beam.get_score(); // defaul value if no lm model is used
+                if (_use_lm_model_flag){ // if lm exist 
+                    auto sentence = new_beam.get_sequence();
+                    to_capital(sentence); // convert to upper case for compatibaility with lm model TODO:
+                    // this has to be controlled by the decoding or scoring information // FUTURE:
+                    lm_score = compute_lm_score(sentence);
+                    VLOG(5) << "[ctcDecoder/expand_beam]: sentence: " << sentence
+                            << ", lm score: "  << lm_score
+                            << ", tot score: " << get_weighted_score(new_beam.get_score(), lm_score); 
+                }
+                float weighted_score = get_weighted_score(new_beam.get_score(), lm_score); 
+                new_beam.set_score(weighted_score); // update beam with the empty token (will not change ) 
             }
         }
         update_beams_map(new_beam);   
     }
     return ;
+}
+
+float ctcDecoder::compute_lm_score(const std::vector<std::string>& sentence){
+    std::cout << "[ctcDecoder/compute_lm_score]: lm recieved this sentence: " << std::endl;
+    for (const auto& word :  sentence) std::cout << word << ", ";
+    std::cout << std::endl;
+    return (get_lm_model().score_sentence(sentence)); // use the score type set by the scoringConfig 
+}
+
+float ctcDecoder::compute_lm_score(const std::string& sentence){
+    return compute_lm_score(stringmanip::break_to_words(sentence, _decoding_info.word_delimiter)); 
+}
+
+inline float ctcDecoder::get_weighted_score(const float& ctc_score, const float& lm_score){
+    return (ctc_score + _decoding_info.alpha * lm_score);
 }
 
 
@@ -190,6 +250,8 @@ std::vector<beam::ctcBeam> ctcDecoder::get_top_beams(){
 } 
 
 
+
+// decoding interface 
 void ctcDecoder::decode_step(const torch::Tensor& emission){
     if (_top_beams.empty()){
         DLOG(WARNING) << "[ctcDecoder/decode_step]: top beams are empty.";
@@ -220,6 +282,7 @@ void ctcDecoder::decode_step(const torch::Tensor& emission){
 }
 
 
+
 std::vector<beam::ctcBeam> ctcDecoder::decode_sequence(torch::Tensor& emissions){
     // ensure compaitble shape. I expect [time, features] input.
     auto emissions_squeezed = torch::squeeze(emissions); // remove redundant axis
@@ -244,4 +307,6 @@ std::vector<beam::ctcBeam> ctcDecoder::decode_sequence(torch::Tensor& emissions)
     return _top_beams;
 }
 
-        
+
+
+// language model related 
