@@ -5,10 +5,10 @@
 #include <utils/my_utils.hpp>
 #include <string.h>
 #include <iomanip>
-#include <thread>
-#include <chrono>
 #include <memory>
-#include <mutex>
+#include <algorithm>
+#include <string>
+
 
 // Helper function to print bytes
 void printBytes(const char* data, size_t size) {
@@ -127,12 +127,40 @@ std::vector<float> readwav(const std::string filename) {
 }
 
 
-namespace myutils{
+namespace asr {
+    namespace myutils{
 
-    double map_to_range(const double& val, const double& min_val, 
-                        const double& max_val, const double& min_range, 
-                        const double& max_range){
-        return ( (val - min_val) / (max_val - min_val) ) * (max_range - min_range) + min_range;
-    }
-    
-}
+        double map_to_range(const double& val, const double& min_val, 
+                            const double& max_val, const double& min_range, 
+                            const double& max_range){
+            return ( (val - min_val) / (max_val - min_val) ) * (max_range - min_range) + min_range;
+        }
+    } // namespace myutils
+
+    namespace stringmanip{
+        std::vector<std::string> break_to_words(const std::string& sentence, const char word_delimiter){
+            std::vector<std::string> result;
+            std::string word;
+            for (const auto& letter : sentence){
+                if (letter != word_delimiter){ // no white space 
+                    word += letter;
+                    continue;
+                    
+                }
+                
+                result.push_back(word);
+                word.clear();
+            } // end for(
+            return result;
+        }
+
+        std::vector<std::string> break_to_words(const std::string& sentence){
+            return break_to_words(sentence, ' ');  // use empty space if no delimiter is set
+        }
+
+        void upper_case(std::string& sequence){
+            std::transform(sequence.begin(), sequence.end(),sequence.begin(),
+                            [](unsigned char c){return std::toupper(c);});
+        }
+    } // stringmanip 
+} //namespace asr

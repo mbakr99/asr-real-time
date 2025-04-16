@@ -156,12 +156,21 @@ void clearHeap(std::priority_queue<T, Container, Compare>& queue, unsigned long 
     }
 }
 
-namespace myutils{
 
-double map_to_range(const double& val, const double& min_val, 
-                    const double& max_val, const double& min_range, 
-                    const double& max_range);
+
+namespace asr{
+    namespace myutils{
+        double map_to_range(const double& val, const double& min_val, 
+                            const double& max_val, const double& min_range, 
+                            const double& max_range);
+        }
+    namespace stringmanip{
+        std::vector<std::string> break_to_words(const std::string& sentence, char word_delimiter);
+        std::vector<std::string> break_to_words(const std::string& sentence);
+        void upper_case(std::string& sequence);
+    }
 }
+
 
 
 #endif // MY_UTILS_HPP
