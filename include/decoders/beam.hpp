@@ -7,27 +7,33 @@
 #include <stdexcept>
 #include <cstring>
 #include <iostream>
+#include <algorithm>
 #include "utils/fst_glog_safe_log.hpp"
 
 
 namespace beam {
 
-typedef int index;
+typedef int posIndex;
 
 struct wordWindow{
-    index word_begin;
-    index word_end;
+    posIndex word_begin;
+    posIndex word_end;
 
     wordWindow() : word_begin(0), word_end(0) {}
-    wordWindow(index begin, index end) 
+    wordWindow(posIndex begin, posIndex end) 
         : word_begin(begin), word_end(end){}
 
-    void shift(index new_begin, index new_end){
+    void shift(posIndex new_begin, posIndex new_end){
         word_begin = new_begin;
         word_end   = new_end;
     }
-    std::tuple<index, index> get_window(){
+    std::tuple<posIndex, posIndex> get_window(){
         return std::make_tuple(word_begin, word_end);
+    }
+
+    void set_window(posIndex begin, posIndex end){
+        word_begin = begin;
+        word_end   = end;
     }
 };
 
@@ -77,17 +83,17 @@ struct Beam{
         sequence.pop_back();
     }
     template <typename Container>
-    Container at(index begin, index last) const {
+    Container at(posIndex begin, posIndex last) const {
         // make sure this does not violate the array bound 
         if (begin > size() || last > size()){
-            throw std::runtime_error("index out of bound"); 
+            throw std::runtime_error("posIndex out of bound"); 
         }
         return Container(sequence.begin() + begin, sequence.begin() + last);
     }
     template <typename Container>
     Container at(wordWindow word_window)  const {
-        index begin = word_window.word_begin;
-        index last  = word_window.word_end;
+        posIndex begin = word_window.word_begin;
+        posIndex last  = word_window.word_end;
         // make sure this does not violate the array bound 
         return at<Container>(begin, last);
     }
@@ -112,7 +118,6 @@ struct Beam{
             return *this; // FIXME: what happens to the other beam
         }
     }
-  
 
     // setters 
     void set_score(float new_score){
@@ -175,6 +180,7 @@ struct ctcBeam : public Beam{
     void set_epsilon_token(char symbol){
         epsilon_token = symbol;
     }
+    char get_epsilon_token() const {return epsilon_token;}
     bool update_beam(char symbol, float score){
         if (sequence.empty()){ // first char
             extend_sequence(symbol);
@@ -205,8 +211,56 @@ struct ctcBeam : public Beam{
     bool is_full_word_fromed(){
         return (sequence.back() == separator_token);
     }
+
+    std::vector<std::string> get_ngrams(size_t order, std::string padding = "</s>"){
+        /*
+        consturct ngram of "order"
+        - get the last word index
+        - reverse the sequence 
+        - from the end of last word start adding words to ngrams 
+        - ensure ngram order integrity 
+        */
+        const std::string sequence = get_sequence<std::string>();
+        auto last_word_end = std::get<1>(last_word_window.get_window());
+        int reverse_shift  = sequence.size() - last_word_end;
+        
+        std::string word;
+        std::vector<std::string> ngram;
+        for (auto it = sequence.rbegin() + reverse_shift; it != sequence.rend(); ++it){
+            if (*it == separator_token) {
+                std::reverse(word.begin(), word.end());
+                ngram.push_back(word);
+                word.clear();
+                continue;
+            }
+            if (it == sequence.rend() - 1){
+                word += *it;
+                std::reverse(word.begin(), word.end());
+                ngram.push_back(word);
+                word.clear();
+            }
+
+            word += *it;
+            if (ngram.size() >= order){
+                break;
+            }
+        }
+
+        // fill with </s> if ngram size is less than order
+        for (size_t i = ngram.size(); i < order; ++i){
+            ngram.push_back(padding);
+        } 
+        
+        // reverse the order of the ngram since 
+        std::reverse(ngram.begin(), ngram.end());
+        return ngram;
+    }
+
+    void set_word_separator_token(char new_separator){separator_token = new_separator;} // set the token that marks new word 
 };
-}
+
+
+} //namespace beam 
 
 
 
