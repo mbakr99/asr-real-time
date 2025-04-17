@@ -25,6 +25,8 @@ struct DecodingInfo{
     ctcScoreSettings ctc_score_info{};
     float alpha = 10; // score = ctc_score + alpha x lm_score
     char word_delimiter = '|';  
+    int lm_order = 3; // 
+    std::string word_begin_token = "</s>";
 
     // getters 
     std::tuple<int, int> get_ctc_score_limits(){
@@ -33,7 +35,9 @@ struct DecodingInfo{
 
     // setters
     void set_alpha(float new_alpha){alpha = new_alpha;}
-    void set_word_delimiter(char new_word_delimiter){word_delimiter = new_word_delimiter;};
+    void set_word_delimiter(char new_word_delimiter){word_delimiter = new_word_delimiter;}
+    void set_lm_order(int new_lm_order){lm_order = new_lm_order;}
+    void set_word_begin_token(std::string new_word_begin_token){word_begin_token = new_word_begin_token;}
 };  
 
 
@@ -108,8 +112,7 @@ private:
     void clear_beams_min_heap();
     void init_beams_map_with_top_beams();
     // functional (lm)
-    float compute_lm_score(const std::string& sentence);
-    float compute_lm_score(const std::vector<std::string>& sentence);
+    float compute_lm_score(const std::vector<std::string>& ngram);
     inline float get_weighted_score(const float& ctc_score, const float& lm_score);
     inline void to_capital(std::string& sequence){stringmanip::upper_case(sequence);}
     // getters 

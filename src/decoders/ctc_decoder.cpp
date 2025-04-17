@@ -7,6 +7,9 @@
 // convenience log warning at certain verbosity level 
 #define VLOG_WARNING(verboselevel) if (VLOG_IS_ON(verboselevel)) LOG(WARNING)
 
+#define println(expr, val) std::cout << expr << val << std::endl;
+#define printngram(ngram) for (const auto& word : ngram) std::cout << word << ", "
+#define newline std::cout << std::endl;
 
 // construcotrs 
 ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams = 10) : _max_num_beams(num_beams), _beams_map{_max_num_beams}{
@@ -122,10 +125,25 @@ void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emi
                 VLOG(6) << "[ctcDecoder/expand_beam]: " << last_word << " is valid";
                 float lm_score = new_beam.get_score(); // defaul value if no lm model is used
                 if (_use_lm_model_flag){ // if lm exist 
-                    auto sentence = new_beam.get_sequence();
-                    to_capital(sentence); // convert to upper case for compatibaility with lm model TODO:
-                    // this has to be controlled by the decoding or scoring information // FUTURE:
-                    lm_score = compute_lm_score(sentence);
+                    auto sentence = new_beam.get_sequence();                  
+                    // convert to upper case for compatibaility with lm model in FUTURE:
+                    // this has to be controlled by the decoding or scoring information 
+                    to_capital(sentence); 
+
+                    // get ngram and score 
+                    auto [_, sentence_end] = new_beam.last_word_window.get_window();
+                    auto ngram = new_beam.generate_ngrams(
+                        sentence, 
+                        _decoding_info.lm_order,
+                        new_beam.separator_token,
+                        _decoding_info.word_begin_token, 
+                        sentence_end - 1 // Note:
+                    ); 
+                    // println("sequence is: ", sentence);
+                    // println("end of sentence: ", sentence_end);
+                    // printngram(ngram);
+                    // newline;
+                    lm_score = compute_lm_score(ngram);
                     VLOG(5) << "[ctcDecoder/expand_beam]: sentence: " << sentence
                             << ", lm score: "  << lm_score
                             << ", tot score: " << get_weighted_score(new_beam.get_score(), lm_score); 
@@ -139,16 +157,10 @@ void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emi
     return ;
 }
 
-float ctcDecoder::compute_lm_score(const std::vector<std::string>& sentence){
-    std::cout << "[ctcDecoder/compute_lm_score]: lm recieved this sentence: " << std::endl;
-    for (const auto& word :  sentence) std::cout << word << ", ";
-    std::cout << std::endl;
-    return (get_lm_model().score_sentence(sentence)); // use the score type set by the scoringConfig 
+float ctcDecoder::compute_lm_score(const std::vector<std::string>& ngram){
+    return (get_lm_model().score_sentence(ngram)); // use the score type set by the scoringConfig 
 }
 
-float ctcDecoder::compute_lm_score(const std::string& sentence){
-    return compute_lm_score(stringmanip::break_to_words(sentence, _decoding_info.word_delimiter)); 
-}
 
 inline float ctcDecoder::get_weighted_score(const float& ctc_score, const float& lm_score){
     return (ctc_score + _decoding_info.alpha * lm_score);

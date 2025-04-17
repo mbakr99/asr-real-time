@@ -8,6 +8,7 @@
 #include <cstring>
 #include <iostream>
 #include <algorithm>
+#include "utils/my_utils.hpp"
 #include "utils/fst_glog_safe_log.hpp"
 
 
@@ -82,6 +83,8 @@ struct Beam{
     void remove_last_char(){
         sequence.pop_back();
     }
+    
+
     template <typename Container>
     Container at(posIndex begin, posIndex last) const {
         // make sure this does not violate the array bound 
@@ -224,6 +227,53 @@ struct ctcBeam : public Beam{
         auto last_word_end = std::get<1>(last_word_window.get_window());
         int reverse_shift  = sequence.size() - last_word_end;
         
+        std::string word;
+        std::vector<std::string> ngram;
+        for (auto it = sequence.rbegin() + reverse_shift; it != sequence.rend(); ++it){
+            if (*it == separator_token) {
+                std::reverse(word.begin(), word.end());
+                ngram.push_back(word);
+                word.clear();
+                continue;
+            }
+            if (it == sequence.rend() - 1){
+                word += *it;
+                std::reverse(word.begin(), word.end());
+                ngram.push_back(word);
+                word.clear();
+            }
+
+            word += *it;
+            if (ngram.size() >= order){
+                break;
+            }
+        }
+
+        // fill with </s> if ngram size is less than order
+        for (size_t i = ngram.size(); i < order; ++i){
+            ngram.push_back(padding);
+        } 
+        
+        // reverse the order of the ngram since 
+        std::reverse(ngram.begin(), ngram.end());
+        return ngram;
+    }
+
+    static std::vector<std::string> generate_ngrams(
+                std::string sequence, 
+                int order,
+                const char separator_token = ' ', 
+                std::string padding = "</s>",
+                posIndex sentence_end = -1 ){
+        /*
+        reverse_shift: poseIndex (alias for int), describes where the end of the sentence in a seqeunce 
+        for example in "i play footb", the last word is not compete and thus, you usually want to get 
+        the ngram for "i play" in this case the reverse_shift is 6 moving the end of the sequence -virtually- 
+        to the "y" in "i play"   
+        */
+        if (sentence_end == -1) sentence_end = sequence.size();
+        posIndex reverse_shift = sequence.size() - sentence_end;
+            
         std::string word;
         std::vector<std::string> ngram;
         for (auto it = sequence.rbegin() + reverse_shift; it != sequence.rend(); ++it){
