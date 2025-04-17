@@ -26,7 +26,7 @@ struct DecodingInfo{
     float alpha = 10; // score = ctc_score + alpha x lm_score
     char word_delimiter = '|';  
     int lm_order = 3; // 
-    std::string word_begin_token = "</s>";
+    std::string sentence_start_token = "</s>";
 
     // getters 
     std::tuple<int, int> get_ctc_score_limits(){
@@ -37,7 +37,7 @@ struct DecodingInfo{
     void set_alpha(float new_alpha){alpha = new_alpha;}
     void set_word_delimiter(char new_word_delimiter){word_delimiter = new_word_delimiter;}
     void set_lm_order(int new_lm_order){lm_order = new_lm_order;}
-    void set_word_begin_token(std::string new_word_begin_token){word_begin_token = new_word_begin_token;}
+    void set_sentence_start_token(std::string new_sentence_start_token){sentence_start_token = new_sentence_start_token;}
 };  
 
 
