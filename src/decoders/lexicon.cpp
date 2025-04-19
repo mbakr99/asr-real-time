@@ -232,6 +232,14 @@ LexiconFst::~LexiconFst(){
         _lexicon_file.close();
     }
     DLOG(INFO) << "[LexiconFst/destructor]: Instance destroyed";
+
+    if (!_fst_owenership_moved){ 
+    // delete the fst if the ptr has not been copied by calling get_lexicon_fst
+        std::cerr << "ownership moved? " << _fst_owenership_moved << std::endl; 
+        std::cerr << "[LexiconFst/destructor]: deleted the fst from heap" << std::endl;
+        delete _lex_fst;
+        
+    }
 }
 
 
@@ -333,7 +341,7 @@ void LexiconFst::update_trie_with_word(const std::string& new_word){
 
 
 void LexiconFst::populate_fst_from_trie(std::shared_ptr<LexFstTrieNode> trie_node,
-                                        fst::StdVectorFst& lex_fst,
+                                        fst::StdVectorFst* lex_fst,
                                         fst::StdArc::StateId& current_state){
     
     
@@ -342,14 +350,14 @@ void LexiconFst::populate_fst_from_trie(std::shared_ptr<LexFstTrieNode> trie_nod
         VLOG(5) << "[LexiconFst/populate_fst_from_trie]: Adding "
                 << letter 
                 << " to the fst";
-        fst::StdArc::StateId next_state = lex_fst.NumStates();
+        fst::StdArc::StateId next_state = lex_fst->NumStates();
 
         // add an arc for each child
         VLOG(5) << "[LexiconFst/populate_fst_from_trie]: Connecting state " 
                 << current_state
                 << " to state "
                 << next_state;            
-        lex_fst.AddArc(current_state,
+        lex_fst->AddArc(current_state,
                        fst::StdArc(
                         _input_symbol_table.Find(std::string(1, letter)),
                         _output_symbol_table.Find("<eps>"),
@@ -358,7 +366,7 @@ void LexiconFst::populate_fst_from_trie(std::shared_ptr<LexFstTrieNode> trie_nod
                        );
 
         // add the state 
-        lex_fst.AddState();
+        lex_fst->AddState();
         
 
         // set to terminal state if the end of a word
@@ -366,7 +374,7 @@ void LexiconFst::populate_fst_from_trie(std::shared_ptr<LexFstTrieNode> trie_nod
             VLOG(5) << "[LexiconFst/populate_fst_from_trie]: Setting state "
                     << next_state
                     << " as final state (EOW)";
-            lex_fst.SetFinal(next_state, fst::TropicalWeight::One());
+            lex_fst->SetFinal(next_state, fst::TropicalWeight::One());
         }
 
 
@@ -379,7 +387,7 @@ void LexiconFst::populate_fst_from_trie(std::shared_ptr<LexFstTrieNode> trie_nod
 
 
 void LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_trie_node, 
-                                         fst::StdVectorFst& lex_fst){
+                                         fst::StdVectorFst* lex_fst){
     
     // check if trie is valid 
     if (!root_trie_node || root_trie_node->children.size() == 0){ // nullptr || empty
@@ -390,8 +398,8 @@ void LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_tr
     } 
     
     // add an intial state 
-    lex_fst.AddState();
-    lex_fst.SetStart(0);
+    lex_fst->AddState();
+    lex_fst->SetStart(0);
 
     // populate fst from trie
     fst::StdArc::StateId current_state = 0;
@@ -399,12 +407,12 @@ void LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_tr
 
     // if the input and output symbols are defined, add them to the fst FIXME: I don't think this is useful as previous call to construct_fst_from_trie relies on having a valid symbol table
     if (_input_symbol_table.NumSymbols() != 0){ 
-        lex_fst.SetInputSymbols(&_input_symbol_table);
+        lex_fst->SetInputSymbols(&_input_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting input symbols to lexicon fst.";
     }
 
     if (_output_symbol_table.NumSymbols() != 0){
-        lex_fst.SetOutputSymbols(&_output_symbol_table);
+        lex_fst->SetOutputSymbols(&_output_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting output symbols to lexicon fst.";
     }
 
@@ -415,7 +423,7 @@ void LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_tr
 }
 
 
-fst::StdVectorFst LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_trie_node){
+fst::StdVectorFst* LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_trie_node){
     
     // check if trie is valid 
     if (!root_trie_node || root_trie_node->children.size() == 0){ // nullptr || empty
@@ -426,11 +434,11 @@ fst::StdVectorFst LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrie
     } 
     
     // init fst
-    fst::StdVectorFst lex_fst;
+    fst::StdVectorFst* lex_fst = new(fst::StdVectorFst);
 
     // add an intial state 
-    lex_fst.AddState();
-    lex_fst.SetStart(0);
+    lex_fst->AddState();
+    lex_fst->SetStart(0);
 
     // populate fst from trie
     fst::StdArc::StateId current_state = 0;
@@ -439,12 +447,12 @@ fst::StdVectorFst LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrie
 
     // if the input and output symbols are defined, add them to the fst
     if (_input_symbol_table.NumSymbols() != 0){ 
-        lex_fst.SetInputSymbols(&_input_symbol_table);
+        lex_fst->SetInputSymbols(&_input_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting input symbols to lexicon fst.";
     }
 
     if (_output_symbol_table.NumSymbols() != 0){
-        lex_fst.SetOutputSymbols(&_output_symbol_table);
+        lex_fst->SetOutputSymbols(&_output_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting output symbols to lexicon fst.";
     }
 
@@ -538,7 +546,7 @@ void LexiconFst::write_fst(fs::path fst_file_name, bool sort){
     sorts the fst based on the input label if the sort_flag is true
     */
    if (sort){
-    fst::ArcSort(&_lex_fst, fst::ILabelCompare<fst::StdArc>());
+    fst::ArcSort(_lex_fst, fst::ILabelCompare<fst::StdArc>());
    }
 
    // ASSERT_TRUE() Note: might add a check in the FUTURE: to make sure the fst is sorted 
@@ -560,7 +568,7 @@ void LexiconFst::write_fst(fs::path fst_file_name){
                 return;
             }
             else{ // the passed directory exists 
-                _lex_fst.Write(fst_file_name);
+                _lex_fst->Write(fst_file_name);
                 fs::path parent_path = fst_file_name.parent_path();
                 save_symbol_tables(parent_path);
             }
@@ -583,7 +591,7 @@ void LexiconFst::write_fst(fs::path fst_file_name){
                 return;
             }
             auto target_file = target_dir / fst_file_name.filename();
-            _lex_fst.Write(target_file);
+            _lex_fst->Write(target_file);
             save_symbol_tables(target_dir);
         }
         
@@ -609,15 +617,11 @@ void LexiconFst::write_fst(fs::path fst_file_name){
             return;
         }
         fs::path target_fst_path = lexicon_dir / fst_file_name; 
-        _lex_fst.Write(target_fst_path); 
+        _lex_fst->Write(target_fst_path); 
         save_symbol_tables(lexicon_dir);
     }
 }
 
-
-fst::StdVectorFst LexiconFst::get_lexicon_fst(){
-    return _lex_fst;
-}
 
 
 fst::SymbolTable LexiconFst::get_input_symbol_table(){
@@ -651,7 +655,7 @@ bool LexiconFst::is_sequence_valid_fst(const std::string& sequence){
         auto symbol_idx = _input_symbol_table.Find(std::string_view(&symbol,1)); // get symbol idx
         fst::StdArc arc;
 
-        for (fst::ArcIterator<fst::StdVectorFst> aiter(_lex_fst, current_state); !aiter.Done(); aiter.Next()){  
+        for (fst::ArcIterator<fst::StdVectorFst> aiter(*_lex_fst, current_state); !aiter.Done(); aiter.Next()){  
             arc = aiter.Value();
             VLOG(6) << "[LexiconFst/is_sequence_valid]: symbol is: " << symbol << " arc ilabel: " << _input_symbol_table.Find(arc.ilabel); 
             if ( symbol_idx == arc.ilabel){ // the letter forms a valid transition
@@ -670,7 +674,7 @@ bool LexiconFst::is_sequence_valid_fst(const std::string& sequence){
     }
     
     // check if we reach a state that is accepting (a valid word)
-    if (_lex_fst.Final(current_state) == fst::TropicalWeight::Zero()){ // final states have non-zero weight
+    if (_lex_fst->Final(current_state) == fst::TropicalWeight::Zero()){ // final states have non-zero weight
         VLOG(5) << "[LexiconFst/is_sequence_valid]: sequence " << sequence << " does not end in a valid state"; 
         return false;
     }
@@ -713,12 +717,11 @@ bool LexiconFst::load_symbol_tables(const fs::path& parent_directory){
 
 bool LexiconFst::load_fst(fs::path path_to_fst){
     // the function assumes that the symbol table is also in the same folder
-    auto loaded_fst_ptr = fst::StdVectorFst::Read(path_to_fst.string());
-    if (!loaded_fst_ptr){
+    _lex_fst = fst::StdVectorFst::Read(path_to_fst.string());
+    if (!_lex_fst){
         LOG(WARNING) << "[LexiconFst/load_fst]: loaded fst is empty";
         return false;
     }
-    _lex_fst = *loaded_fst_ptr;
 
     // load the symbol tables
     fs::path parent_directory = path_to_fst.parent_path();

@@ -189,9 +189,12 @@ private:
  
 
     // fst-related data 
-    static std::shared_ptr<FSTDICT> dictionary_ptr_;
-    static std::shared_ptr<FSTMATCH> matcher_ptr_;
+    static std::unique_ptr<FSTDICT> dictionary_ptr_;
+    static std::unique_ptr<FSTMATCH> matcher_ptr_;
     dictState dictionary_state_;
+
+    // instance control 
+    static inline int instances_count_ = 0;
 
     // tokens : chars relationship 
     static std::unordered_map<char, int> char2index_;
@@ -205,26 +208,38 @@ public:
     
     
     // constructor
-    ctcBeam() : dictionary_state_(0) {}
+    ctcBeam() : dictionary_state_(0) {++instances_count_;}
     ctcBeam(std::string some_sequence, float score) : 
-        Beam(some_sequence, score), dictionary_state_(0) {}
+        Beam(some_sequence, score), dictionary_state_(0) {++instances_count_;}
 
     ctcBeam(const ctcBeam& other) : Beam(other) {
         /*
         copying the base beam class was done in the intializer list
         */
         // copy the fst related info
-        this->dictionary_ptr_   = other.dictionary_ptr_;
-        this->matcher_ptr_      = other.matcher_ptr_;
         this->dictionary_state_ = other.dictionary_state_;
+        ++instances_count_;
     }
 
-    ~ctcBeam(){}
+    ~ctcBeam(){
+        // remove this instance from the count
+        --instances_count_;
+
+        // free memory of static members 
+        if (instances_count_ < 1){
+            // dictionary_ptr_.reset();
+            // matcher_ptr_.reset();
+            // input_symbol_table_ I don't think I need to do anything here, as this recives a copy and not a ptr or reference 
+        }
+
+    }
     
+    static int get_instances_count(){return instances_count_;}
+
     // fst-related methods 
     static void set_fst(FSTDICT* fst_dictionary, fst::SymbolTable& symbol_table){ 
-        dictionary_ptr_ = std::shared_ptr<FSTDICT>(fst_dictionary);
-        matcher_ptr_ = std::make_shared<FSTMATCH>(fst_dictionary, fst::MATCH_INPUT);
+        dictionary_ptr_ = std::unique_ptr<FSTDICT>(fst_dictionary);
+        matcher_ptr_ = std::make_unique<FSTMATCH>(fst_dictionary, fst::MATCH_INPUT);
         input_symbol_table_ = std::move(symbol_table);
     }
 
