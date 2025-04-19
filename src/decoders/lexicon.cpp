@@ -356,7 +356,7 @@ void LexiconFst::populate_fst_from_trie(std::shared_ptr<LexFstTrieNode> trie_nod
             VLOG(5) << "[LexiconFst/populate_fst_from_trie]: Setting state "
                     << next_state
                     << " as final state (EOW)";
-            lex_fst.SetFinal(next_state,1.0);
+            lex_fst.SetFinal(next_state, fst::TropicalWeight::One());
         }
 
 
@@ -478,7 +478,7 @@ void LexiconFst::construct_fst_from_lex_file(){
 
         // split into word and its components 
         size_t split_pos = line.find('\t');
-        word_components = line.substr(split_pos +1 );
+        word_components = line.substr(split_pos +1 ); 
 
         VLOG(4) << "[LexiconFst/construct_fst_from_lex_file]: splitting line at position " << split_pos;
         VLOG(4) << "[LexiconFst/construct_fst_from_lex_file]: adding the pronounciation " << word_components << 

@@ -8,9 +8,17 @@
 #include <cstring>
 #include <iostream>
 #include <algorithm>
+#include <fst/fstlib.h>
 #include "utils/my_utils.hpp"
 #include "utils/fst_glog_safe_log.hpp"
 
+#define VLOG(level) std::cout
+
+float OOV_PENALTY = 1000;
+
+#define print(expr, val) std::cout << expr << val
+#define NL std::endl
+#define println(expr, val) print(expr,val) << NL
 
 namespace beam {
 
@@ -169,48 +177,168 @@ struct beamEqual{
 };
 
 
+// for easier readability  
+typedef fst::SortedMatcher<fst::StdVectorFst> FSTMATCH;
+typedef fst::StdVectorFst FSTDICT;
+typedef fst::StdArc::StateId dictState;
+
+
 struct ctcBeam : public Beam{
+private:
+    
+ 
+
+    // fst-related data 
+    static std::shared_ptr<FSTDICT> dictionary_ptr_;
+    static std::shared_ptr<FSTMATCH> matcher_ptr_;
+    dictState dictionary_state_;
+
+    // tokens : chars relationship 
+    static std::unordered_map<char, int> char2index_;
+    static fst::SymbolTable input_symbol_table_; // static inline
+
+public:
     // data
     char epsilon_token   = '-';
     char separator_token = '|'; 
+
+    
     
     // constructor
-    ctcBeam(){}
-    ctcBeam(std::string some_sequence, float score) : Beam{some_sequence, score} {}
+    ctcBeam() : dictionary_state_(0) {}
+    ctcBeam(std::string some_sequence, float score) : 
+        Beam(some_sequence, score), dictionary_state_(0) {}
+
+    ctcBeam(const ctcBeam& other) : Beam(other) {
+        /*
+        copying the base beam class was done in the intializer list
+        */
+        // copy the fst related info
+        this->dictionary_ptr_   = other.dictionary_ptr_;
+        this->matcher_ptr_      = other.matcher_ptr_;
+        this->dictionary_state_ = other.dictionary_state_;
+    }
+
     ~ctcBeam(){}
     
+    // fst-related methods 
+    static void set_fst(FSTDICT* fst_dictionary, fst::SymbolTable& symbol_table){ 
+        dictionary_ptr_ = std::shared_ptr<FSTDICT>(fst_dictionary);
+        matcher_ptr_ = std::make_shared<FSTMATCH>(fst_dictionary, fst::MATCH_INPUT);
+        input_symbol_table_ = std::move(symbol_table);
+    }
+
+    // void set_dictionary(FSTDICT* fst_ptr){dictionary_ptr_ = std::make_shared<FSTDICT>(fst_ptr);} 
+    
+    // void set_mathcer(FSTMATCH* matcher_ptr){matcher_ptr_ = std::make_shared<FSTMATCH>(matcher_ptr);}
+
+    // void set_input_symbol_table(fst::SymbolTable& symbol_table){input_symbol_table_ = symbol_table;}
+
+
     // operators 
     void set_epsilon_token(char symbol){
         epsilon_token = symbol;
     }
+
     char get_epsilon_token() const {return epsilon_token;}
-    bool update_beam(char symbol, float score){
+
+    void update_beam(char symbol, float score){
         if (sequence.empty()){ // first char
             extend_sequence(symbol);
-            update_score(score);
         }
         else{ 
-            if (sequence.back() == symbol){ // ctc rule #1: remove repetitive symbol 
-                update_score(score);
+            if (sequence.back() == epsilon_token){
+                remove_last_char();
+                extend_sequence(symbol);
             }
-            else{
-                if (sequence.back() == epsilon_token){
-                    remove_last_char();
+            else { // non-epsilon
+                if (sequence.back() != symbol){ // ctc rule #1: remove repetitive symbol 
                     extend_sequence(symbol);
-                    update_score(score);
                 }
-                else{
-                    extend_sequence(symbol);
-                    update_score(score);
-                }
+                else { // (sequence.back() == symbol) repetitive char does not change the sequence but adds to the score
+                    discount(-1*score);
+                    VLOG(4) << "[ctcBeam/update_beam]: repititive charchater, moving to next charchater" << NL;
+                    return ;
+                }   
             }
+
+        
         }
-        if (is_full_word_fromed()){
+
+        // sequence could have epsilon at the end (dictionary does not have epsilon)
+        if (sequence.back() == epsilon_token){
+            update_score(score);
+            VLOG(4) << "[ctcBeam/update_beam]: epsilon charchater, moving to next charchater" << NL;
+            return ; // epsilon does not change the sequence 
+        }
+
+        // check if dictionary allows this sequence 
+        // int char_index = char2index_[sequence.back()]; 
+        /* 
+        Note: the logic of my implementation passes the past letter in the sequence to thesymbol table
+        and not the char to be added "symbol". Why, becuase, the sequence is updated using the ctc rules first.  
+        */
+        auto char_index = input_symbol_table_.Find(std::string_view(&sequence.back(),1)); 
+        matcher_ptr_->SetState(dictionary_state_);
+        bool found = matcher_ptr_->Find(char_index);
+
+        VLOG(4) << "[ctcBeam/update_beam]: moving from charachter: " 
+                << sequence[sequence.size() - 2] << " to: " << sequence.back() << NL; 
+        // print arcs going out of current_state_
+        fst::StdArc arc;
+        // for (fst::ArcIterator<fst::StdVectorFst> aiter(*dictionary_ptr_, dictionary_state_); !aiter.Done(); aiter.Next()){
+        //     arc = aiter.Value(); FIXME:
+        //     std::cout << >"arc input label: " << arc.ilabel << std::endl;
+        // }
+        if (!found){ // word not in dictionary >
+            discount(OOV_PENALTY);
+        /*
+        If the word is not in dictionary set the dictionary_state_ to the root of the fst
+        for next search. 
+        */
+            VLOG(4) << "[ctcBeam/update_beam]: the transition " 
+                    << sequence[sequence.size() - 2] << " -> " << sequence.back()
+                    << " was not found" << NL;
+            dictionary_state_ = dictionary_ptr_->Start(); 
+            VLOG(4) << "moving dictiornay state to " << dictionary_state_ << NL;
+            return ;
+        }
+        /*
+        If the mathcer found an arc representing the transition:
+        - update the score
+        - get the arc next state 
+        */
+
+        discount(-1*score);
+        VLOG(4) << "transition " 
+                << sequence[sequence.size() - 2] << " -> " <<  sequence.back() 
+                << " exists." << NL;
+        auto FSTZERO = fst::TropicalWeight::Zero();
+        auto next_state = matcher_ptr_->Value().nextstate;
+        auto next_state_weight = dictionary_ptr_->Final(next_state);
+        bool is_final_state = next_state_weight != FSTZERO;
+        if (!is_final_state) {
+            std::cout << "moving dictionary_state_ forward" << std::endl;
+            dictionary_state_ = next_state;
+            /*
+            In this application, a full word is formed when the | token is reached. This 
+            corresponds to a final state in the fst. If this logic does not hold a separate
+            method that checks word formation should be used (is_full_wrod_formed())  
+            */
             last_word_window.shift(last_word_window.word_end, size());
-            return true;
         }
-        return false;
+        else {
+        
+            dictionary_state_ = dictionary_ptr_->Start();   
+            VLOG(4) << sequence.back() 
+            << " marks the end of this word"
+            << " moving the dictionary state to " 
+            << dictionary_state_ << NL;
+        }
+
+        return;
     }
+
     bool is_full_word_fromed(){
         return (sequence.back() == separator_token);
     }
@@ -307,8 +435,11 @@ struct ctcBeam : public Beam{
     }
 
     void set_word_separator_token(char new_separator){separator_token = new_separator;} // set the token that marks new word 
-};
 
+
+
+
+};
 
 } //namespace beam 
 

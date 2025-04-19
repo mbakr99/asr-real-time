@@ -66,6 +66,7 @@ public:
     fst::StdVectorFst get_lexicon_fst();
     fst::SymbolTable get_input_symbol_table();
     std::shared_ptr<LexFstTrieNode> get_trie();
+    fst::StdVectorFst& get_fst(){return _lex_fst;}
 
     // functional 
     bool is_sequence_valid_fst(const std::string& seqeunce);

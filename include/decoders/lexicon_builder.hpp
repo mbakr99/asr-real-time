@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <fstream>
 
-class GraphemeLexiconBuilder{
+class GraphemeLexiconBuilder{ // TODO: chnage the name of this to dictionary builder
     private:
         std::string _lexicon_read_path;   // file containing dictionary 
         std::string _lexicon_write_path; // file where lexicon be written

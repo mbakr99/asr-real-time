@@ -7,9 +7,6 @@
 // convenience log warning at certain verbosity level 
 #define VLOG_WARNING(verboselevel) if (VLOG_IS_ON(verboselevel)) LOG(WARNING)
 
-#define println(expr, val) std::cout << expr << val << std::endl;
-#define printngram(ngram) for (const auto& word : ngram) std::cout << word << ", "
-#define newline std::cout << std::endl;
 
 // construcotrs 
 ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams = 10) : _max_num_beams(num_beams), _beams_map{_max_num_beams}{
@@ -136,7 +133,7 @@ void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emi
                         sentence, 
                         _decoding_info.lm_order,
                         new_beam.separator_token,
-                        _decoding_info.word_begin_token, 
+                        _decoding_info.sentence_start_token, 
                         sentence_end - 1 // Note:
                     ); 
                     // println("sequence is: ", sentence);
