@@ -60,6 +60,7 @@ public:
     fst::StdVectorFst construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_trie_node);
     void construct_fst_from_lex_file(); // FUTURE: I can enable users to pass a different file
     void write_fst(fs::path fst_save_path); // TODO: change the return type to bool
+    void write_fst(fs::path fst_svae_path, bool sort);
     bool load_fst(fs::path path_to_fst); // TODO: implement this method
 
     // getters 

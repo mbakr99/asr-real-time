@@ -2,11 +2,21 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include "decoders/lexicon.hpp"
 #include "utils/fst_glog_safe_log.hpp"
 
 
+#define ASSERT_TRUE(expr) assert_eq(static_cast<bool>(expr), true)
 
+template <typename T>
+void assert_eq(T x, T y){
+    if (x!=y){
+        std::ostringstream oss; 
+        oss <<  "assertion failed: vals " << x << " and " << y << " are not equal";
+        throw std::runtime_error(oss.str());
+    }
+}
 
 namespace fs = std::filesystem;
 
@@ -522,6 +532,19 @@ bool LexiconFst::save_symbol_tables(const std::string target_directory) const { 
     return true;
 }
 
+
+void LexiconFst::write_fst(fs::path fst_file_name, bool sort){
+    /*
+    sorts the fst based on the input label if the sort_flag is true
+    */
+   if (sort){
+    fst::ArcSort(&_lex_fst, fst::ILabelCompare<fst::StdArc>());
+   }
+
+   // ASSERT_TRUE() Note: might add a check in the FUTURE: to make sure the fst is sorted 
+   
+   write_fst(fst_file_name);
+} 
 
 
 void LexiconFst::write_fst(fs::path fst_file_name){
