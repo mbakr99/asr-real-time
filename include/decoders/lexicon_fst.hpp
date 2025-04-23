@@ -23,8 +23,8 @@ struct LexFstTrieNode{
 class LexiconFst{
 private:
     // symbol table
-    fst::SymbolTable _input_symbol_table;
-    fst::SymbolTable _output_symbol_table; // FUTURE: This will be used in the future 
+    fst::SymbolTable* _input_symbol_table;
+    fst::SymbolTable* _output_symbol_table; // FUTURE: This will be used in the future 
     bool _flag_output_word_symbol; // FUTURE: This will be used in the future
 
     // files 
@@ -66,7 +66,7 @@ public:
 
     // getters 
     fst::StdVectorFst* get_lexicon_fst(){_fst_owenership_moved = true; return _lex_fst;};
-    fst::SymbolTable get_input_symbol_table();
+    fst::SymbolTable* get_input_symbol_table();
     std::shared_ptr<LexFstTrieNode> get_trie();
     
 
@@ -78,12 +78,13 @@ public:
 
     // operators 
     LexiconFst& operator=(LexiconFst& other);
+    
 
 private:
     bool save_symbol_tables(const std::string target_directory) const;
     bool load_symbol_tables(const fs::path& target_directory);
     bool load_symbol_tables(const fs::path& isymbols_path, const fs::path& osymbols_path);
-
+     
 };
 
 

@@ -59,7 +59,7 @@ struct lmScoringConfig{
 
     // control scoring beahvior   
     float length_penalty = 0.6; // to account for decreaing length 
-    scoreType score_type = MAPPED;
+    scoreType score_type = MAPPED; // FIXME:
 
     // external 
 };

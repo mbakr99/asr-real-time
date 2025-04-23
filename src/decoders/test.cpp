@@ -12,8 +12,18 @@ namespace fs = std::filesystem;
 
 void other_function();
 
+std::unique_ptr<beam::SymbolTable> beam::ctcBeam::input_symbol_table_;
+std::unique_ptr<beam::FSTDICT>  beam::ctcBeam::dictionary_ptr_;
+std::unique_ptr<beam::FSTMATCH> beam::ctcBeam::matcher_ptr_;
+
 
 int main(int argc, char* argv[]){
+
+    if (argc < 4){
+        std::cout << "[main]: pass all arguments: cut_ratio, log_verbosity, lm_weight" << std::endl;
+        return 1;
+    }
+
 
     // Initialize logging first, with minimal configuration
     google::InitGoogleLogging(argv[0]);
@@ -51,6 +61,7 @@ int main(int argc, char* argv[]){
     fs::path model_path   = data_folder  / "models"     / "model.pt"; 
     fs::path lexicon_path = data_folder  / "lexicon"    / "lexicon.txt"; 
     fs::path fst_path     = data_folder  / "lexicon"    / "lexicon_fst.fst";
+    fs::path lm_path      = data_folder  / "models"     / "3-gram.pruned.1e-7.arpa";
 
 
     // set the torch model
@@ -72,17 +83,11 @@ int main(int argc, char* argv[]){
     std::cout << "[main]: short audio size: " << short_audio.size() << std::endl;;
     auto emissions = torch_model.pass_forward(short_audio);
 
-    // load an fst 
-    LexiconFst lex_fst;
-    if (!lex_fst.load_fst(fst_path)){
-        std::cerr << "[main]: failed to load the fst" << std::endl;
-        return -1;
-    }
 
-
-    // create a decoder instance >
-    ctcDecoder decoder(tokens_path, 10);
-    decoder.set_fst(lex_fst);
+   
+    ctcDecoder decoder(tokens_path, 15, fst_path, lm_path);
+    float alpha = std::stof(argv[3]); // set alpha 
+    decoder.set_lm_weight(alpha);
     std::vector<beam::ctcBeam> decoding_result;
     bool result_set = false;
     if (emissions.has_value()){

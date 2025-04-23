@@ -33,19 +33,19 @@ message(STATUS "kenlm libraries using kenlm-LIBRARIES: ${kenlm-INCLUDE_DIRS}")
 # Add local include directory 
 include_directories(${MY_PROJECT_ROOT_DIRECTORY}/include)
 
-# # Create Exe 1
-# add_executable(test ${CMAKE_CURRENT_SOURCE_DIR}/decoders/test.cpp
-#                     ${CMAKE_CURRENT_SOURCE_DIR}/decoders/ctc_decoder.cpp
-#                     ${CMAKE_CURRENT_SOURCE_DIR}/decoders/lexicon.cpp 
-#                     ${CMAKE_CURRENT_SOURCE_DIR}/models/torch_script_model.cpp
-#                     ${CMAKE_CURRENT_SOURCE_DIR}/models/ngrams_model.cpp
-#                     ${CMAKE_CURRENT_SOURCE_DIR}/utils/my_utils.cpp
-#                     )
+# Create Exe 1
+add_executable(test ${CMAKE_CURRENT_SOURCE_DIR}/decoders/test.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/decoders/ctc_decoder.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/decoders/lexicon.cpp 
+                    ${CMAKE_CURRENT_SOURCE_DIR}/models/torch_script_model.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/models/ngrams_model.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/utils/my_utils.cpp
+                    )
 
-# target_link_libraries(test PRIVATE glog::glog
-#                            PRIVATE ${TORCH_LIBRARIES} 
-#                            PRIVATE ${OpenFst}
-#                            PRIVATE kenlm::kenlm)
+target_link_libraries(test PRIVATE glog::glog
+                           PRIVATE ${TORCH_LIBRARIES} 
+                           PRIVATE ${OpenFst}
+                           PRIVATE kenlm::kenlm)
 
 
 # Create Exe 2
@@ -57,8 +57,14 @@ target_link_libraries(setup PRIVATE glog::glog
                            PRIVATE ${OpenFst})
 
 
-add_executable(test_sree3 ${CMAKE_CURRENT_SOURCE_DIR}/utils/test_sree3.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/decoders/lexicon.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/utils/my_utils.cpp)
+# add_executable(test_sree3 ${CMAKE_CURRENT_SOURCE_DIR}/utils/test_sree3.cpp
+#     ${CMAKE_CURRENT_SOURCE_DIR}/decoders/lexicon.cpp
+#     ${CMAKE_CURRENT_SOURCE_DIR}/utils/my_utils.cpp)
 
-target_link_libraries(test_sree3 kenlm::kenlm glog::glog ${OpenFst})
+# target_link_libraries(test_sree3 kenlm::kenlm glog::glog ${OpenFst})
+
+# add_executable(test_asra3 ${CMAKE_CURRENT_SOURCE_DIR}/utils/test_asra3.cpp
+# ${CMAKE_CURRENT_SOURCE_DIR}/models/torch_script_model.cpp
+# ${CMAKE_CURRENT_SOURCE_DIR}/utils/my_utils.cpp)
+
+# target_link_libraries(test_asra3 kenlm::kenlm glog::glog ${OpenFst} ${TORCH_LIBRARIES})

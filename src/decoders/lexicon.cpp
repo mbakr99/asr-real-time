@@ -193,7 +193,7 @@ void GraphemeLexiconBuilder::generate_lexicon(const std::string path_to_write_fi
 
 LexiconFst::LexiconFst() : _root_trie_node(std::make_shared<LexFstTrieNode>()){ 
     DLOG(INFO) << "[LexiconFst/constuctor]: Instance created (default constructor).";
-    _output_symbol_table.AddSymbol("<eps>", 0);
+    _output_symbol_table->AddSymbol("<eps>", 0);
     DLOG(INFO) << "[LexiconFst/constuctor/temp]: Created an output symbol table with just eps symbol";
 }
 
@@ -214,7 +214,7 @@ LexiconFst::LexiconFst(const std::string lexicon_file_path) : _lexicon_path(lexi
     }
     DLOG(INFO) << "[LexiconFst/constuctor]: Successfully opened lexicon file at " << _lexicon_path;
 
-    _output_symbol_table.AddSymbol("<eps>", 0);
+    _output_symbol_table->AddSymbol("<eps>", 0);
     DLOG(INFO) << "[LexiconFst/constuctor/temp]: Created an output symbol table with just eps symbol";
 }
 
@@ -258,11 +258,11 @@ void LexiconFst::update_symbol_table_from_word(const std::string& word_component
         else{ // check if the symbol exists 
             VLOG(5) << "[LexiconFst/update_symbol_table_from_word]: cheking if " << word_components[i]
                     << " exists in the input symbol table"; 
-            if (!_input_symbol_table.Member(std::string(1,word_components[i]))){ // symbol does not exist
+            if (!_input_symbol_table->Member(std::string(1,word_components[i]))){ // symbol does not exist
                 VLOG(5) << "[LexiconFst/update_symbol_table_from_word]: symbol does not exist.\n"
-                        << "Entry " << word_components[i] << " : " << _input_symbol_table.NumSymbols() + 1
+                        << "Entry " << word_components[i] << " : " << _input_symbol_table->NumSymbols() + 1
                         << " added to the symbol table."; 
-                _input_symbol_table.AddSymbol(std::string(1,word_components[i]), _input_symbol_table.NumSymbols() + 1);
+                _input_symbol_table->AddSymbol(std::string(1,word_components[i]), _input_symbol_table->NumSymbols() + 1);
             }
         }
     }
@@ -284,7 +284,7 @@ void LexiconFst::update_symbol_table_from_words(const std::vector<std::string>& 
 
 void LexiconFst::print_input_symbol_table(){
     std::cout << "input symbol table" << std::endl;
-    for (auto it = _input_symbol_table.begin(); it != _input_symbol_table.end(); ++it){
+    for (auto it = _input_symbol_table->begin(); it != _input_symbol_table->end(); ++it){
             std::cout << it->Symbol() << " : " << it->Label() << std::endl;
     }
 }
@@ -292,7 +292,7 @@ void LexiconFst::print_input_symbol_table(){
 
 void LexiconFst::print_output_symbol_table(){
     std::cout << "output symbol table" << std::endl;
-    for (auto it = _output_symbol_table.begin(); it != _output_symbol_table.end(); ++it){
+    for (auto it = _output_symbol_table->begin(); it != _output_symbol_table->end(); ++it){
             std::cout << it->Symbol() << " : " << it->Label() << std::endl;
     }
 }
@@ -359,8 +359,8 @@ void LexiconFst::populate_fst_from_trie(std::shared_ptr<LexFstTrieNode> trie_nod
                 << next_state;            
         lex_fst->AddArc(current_state,
                        fst::StdArc(
-                        _input_symbol_table.Find(std::string(1, letter)),
-                        _output_symbol_table.Find("<eps>"),
+                        _input_symbol_table->Find(std::string(1, letter)),
+                        _output_symbol_table->Find("<eps>"),
                         1,
                         next_state)
                        );
@@ -406,13 +406,13 @@ void LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTrieNode> root_tr
     populate_fst_from_trie(root_trie_node, lex_fst, current_state);
 
     // if the input and output symbols are defined, add them to the fst FIXME: I don't think this is useful as previous call to construct_fst_from_trie relies on having a valid symbol table
-    if (_input_symbol_table.NumSymbols() != 0){ 
-        lex_fst->SetInputSymbols(&_input_symbol_table);
+    if (_input_symbol_table->NumSymbols() != 0){ 
+        lex_fst->SetInputSymbols(_input_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting input symbols to lexicon fst.";
     }
 
-    if (_output_symbol_table.NumSymbols() != 0){
-        lex_fst->SetOutputSymbols(&_output_symbol_table);
+    if (_output_symbol_table->NumSymbols() != 0){
+        lex_fst->SetOutputSymbols(_output_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting output symbols to lexicon fst.";
     }
 
@@ -446,13 +446,13 @@ fst::StdVectorFst* LexiconFst::construct_fst_from_trie(std::shared_ptr<LexFstTri
 
 
     // if the input and output symbols are defined, add them to the fst
-    if (_input_symbol_table.NumSymbols() != 0){ 
-        lex_fst->SetInputSymbols(&_input_symbol_table);
+    if (_input_symbol_table->NumSymbols() != 0){ 
+        lex_fst->SetInputSymbols(_input_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting input symbols to lexicon fst.";
     }
 
-    if (_output_symbol_table.NumSymbols() != 0){
-        lex_fst->SetOutputSymbols(&_output_symbol_table);
+    if (_output_symbol_table->NumSymbols() != 0){
+        lex_fst->SetOutputSymbols(_output_symbol_table);
         DLOG(INFO) << "[LexiconFst/construct_fst_from_trie]: setting output symbols to lexicon fst.";
     }
 
@@ -535,8 +535,8 @@ bool LexiconFst::save_symbol_tables(const std::string target_directory) const { 
                       << "for saving fst input and output symbols";
         return false;
     }
-    _input_symbol_table.Write(isymbols_stream); // the writing is done in binary mode
-    _output_symbol_table.Write(osymbols_stream);
+    _input_symbol_table->Write(isymbols_stream); // the writing is done in binary mode
+    _output_symbol_table->Write(osymbols_stream);
     return true;
 }
 
@@ -624,7 +624,7 @@ void LexiconFst::write_fst(fs::path fst_file_name){
 
 
 
-fst::SymbolTable LexiconFst::get_input_symbol_table(){
+fst::SymbolTable* LexiconFst::get_input_symbol_table(){
     return _input_symbol_table; 
 }
 
@@ -652,12 +652,12 @@ bool LexiconFst::is_sequence_valid_fst(const std::string& sequence){
 
         VLOG(5) << "[LexiconFst/is_sequence_valid]: checking symbol " << symbol;
 
-        auto symbol_idx = _input_symbol_table.Find(std::string_view(&symbol,1)); // get symbol idx
+        auto symbol_idx = _input_symbol_table->Find(std::string_view(&symbol,1)); // get symbol idx
         fst::StdArc arc;
 
         for (fst::ArcIterator<fst::StdVectorFst> aiter(*_lex_fst, current_state); !aiter.Done(); aiter.Next()){  
             arc = aiter.Value();
-            VLOG(6) << "[LexiconFst/is_sequence_valid]: symbol is: " << symbol << " arc ilabel: " << _input_symbol_table.Find(arc.ilabel); 
+            VLOG(6) << "[LexiconFst/is_sequence_valid]: symbol is: " << symbol << " arc ilabel: " << _input_symbol_table->Find(arc.ilabel); 
             if ( symbol_idx == arc.ilabel){ // the letter forms a valid transition
                 VLOG(6) << "[LexiconFst/is_sequence_valid]: symbol found";
                 current_state = arc.nextstate; // move to next state 
@@ -694,14 +694,14 @@ bool LexiconFst::load_symbol_tables(const fs::path& isymbols_path, const fs::pat
         return false;
     }
 
-    auto loaded_isymbols_table = _input_symbol_table.Read(isymbols_path.string()); 
-    auto loaded_osymbols_table = _output_symbol_table.Read(osymbols_path.string()); // for symmetry
+    auto loaded_isymbols_table = _input_symbol_table->Read(isymbols_path.string()); 
+    auto loaded_osymbols_table = _output_symbol_table->Read(osymbols_path.string()); // for symmetry
     if (!(loaded_isymbols_table && loaded_osymbols_table)){
         LOG(WARNING) << "[LexiconFst/load_symbol_tables]: input and output files resulted in empty pointers";
         return false; 
     }
-    _input_symbol_table  = *loaded_isymbols_table;
-    _output_symbol_table = *loaded_osymbols_table;
+    _input_symbol_table  = loaded_isymbols_table; // Fixed: The destructor is now freeing this memory  
+    _output_symbol_table = loaded_osymbols_table;
     
     return true;
 }
@@ -740,3 +740,5 @@ LexiconFst& LexiconFst::operator=(LexiconFst& other){
 
     return *this;
 }
+
+

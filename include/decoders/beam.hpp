@@ -12,13 +12,14 @@
 #include "utils/my_utils.hpp"
 #include "utils/fst_glog_safe_log.hpp"
 
-#define VLOG(level) std::cout
 
-float OOV_PENALTY = 1000;
 
-#define print(expr, val) std::cout << expr << val
-#define NL std::endl
-#define println(expr, val) print(expr,val) << NL
+extern float OOV_PENALTY;
+
+// #define VLOG(level) std::cout
+// #define print(expr, val) std::cout << expr << val
+// #define NL std::endl
+// #define println(expr, val) print(expr,val) << NL
 
 namespace beam {
 
@@ -181,6 +182,7 @@ struct beamEqual{
 typedef fst::SortedMatcher<fst::StdVectorFst> FSTMATCH;
 typedef fst::StdVectorFst FSTDICT;
 typedef fst::StdArc::StateId dictState;
+typedef fst::SymbolTable SymbolTable;
 
 
 struct ctcBeam : public Beam{
@@ -198,7 +200,7 @@ private:
 
     // tokens : chars relationship 
     static std::unordered_map<char, int> char2index_;
-    static fst::SymbolTable input_symbol_table_; // static inline
+    static std::unique_ptr<SymbolTable> input_symbol_table_; // static inline
 
 public:
     // data
@@ -237,10 +239,10 @@ public:
     static int get_instances_count(){return instances_count_;}
 
     // fst-related methods 
-    static void set_fst(FSTDICT* fst_dictionary, fst::SymbolTable& symbol_table){ 
+    static void set_fst(FSTDICT* fst_dictionary, fst::SymbolTable* symbol_table){ 
         dictionary_ptr_ = std::unique_ptr<FSTDICT>(fst_dictionary);
         matcher_ptr_ = std::make_unique<FSTMATCH>(fst_dictionary, fst::MATCH_INPUT);
-        input_symbol_table_ = std::move(symbol_table);
+        input_symbol_table_ = std::unique_ptr<SymbolTable>(symbol_table);
     }
 
     // void set_dictionary(FSTDICT* fst_ptr){dictionary_ptr_ = std::make_shared<FSTDICT>(fst_ptr);} 
@@ -260,6 +262,8 @@ public:
     void update_beam(char symbol, float score){
         if (sequence.empty()){ // first char
             extend_sequence(symbol);
+            update_score(score);
+            return;
         }
         else{ 
             if (sequence.back() == epsilon_token){
@@ -271,8 +275,8 @@ public:
                     extend_sequence(symbol);
                 }
                 else { // (sequence.back() == symbol) repetitive char does not change the sequence but adds to the score
-                    discount(-1*score);
-                    VLOG(4) << "[ctcBeam/update_beam]: repititive charchater, moving to next charchater" << NL;
+                    update_score(score);
+                    VLOG(4) << "[ctcBeam/update_beam]: repititive charchater, moving to next charchater";
                     return ;
                 }   
             }
@@ -283,7 +287,7 @@ public:
         // sequence could have epsilon at the end (dictionary does not have epsilon)
         if (sequence.back() == epsilon_token){
             update_score(score);
-            VLOG(4) << "[ctcBeam/update_beam]: epsilon charchater, moving to next charchater" << NL;
+            VLOG(4) << "[ctcBeam/update_beam]: epsilon charchater, moving to next charchater";
             return ; // epsilon does not change the sequence 
         }
 
@@ -293,12 +297,21 @@ public:
         Note: the logic of my implementation passes the past letter in the sequence to thesymbol table
         and not the char to be added "symbol". Why, becuase, the sequence is updated using the ctc rules first.  
         */
-        auto char_index = input_symbol_table_.Find(std::string_view(&sequence.back(),1)); 
+        auto char_index = input_symbol_table_->Find(std::string_view(&sequence.back(),1)); 
         matcher_ptr_->SetState(dictionary_state_);
         bool found = matcher_ptr_->Find(char_index);
 
+        // formatting for vlog // FIXME: this is to be removed after debugging 
+        char from, to;
+        if (sequence.size() <2){
+            from = ' ';
+        }
+        else{
+            from = sequence[sequence.size() - 2]; 
+        }
+        to = sequence.back();
         VLOG(4) << "[ctcBeam/update_beam]: moving from charachter: " 
-                << sequence[sequence.size() - 2] << " to: " << sequence.back() << NL; 
+                << from << " to: " << to; 
         // print arcs going out of current_state_
         fst::StdArc arc;
         // for (fst::ArcIterator<fst::StdVectorFst> aiter(*dictionary_ptr_, dictionary_state_); !aiter.Done(); aiter.Next()){
@@ -306,16 +319,18 @@ public:
         //     std::cout << >"arc input label: " << arc.ilabel << std::endl;
         // }
         if (!found){ // word not in dictionary >
-            discount(OOV_PENALTY);
+            VLOG(5) << "penalizing beam: " << get_sequence() << " for oov!";
+            zero_out_score();
+            // discount(OOV_PENALTY);  misses up with the range if variables and thus the scale
         /*
         If the word is not in dictionary set the dictionary_state_ to the root of the fst
         for next search. 
         */
             VLOG(4) << "[ctcBeam/update_beam]: the transition " 
-                    << sequence[sequence.size() - 2] << " -> " << sequence.back()
-                    << " was not found" << NL;
+                    << from << " -> " << to
+                    << " was not found";
             dictionary_state_ = dictionary_ptr_->Start(); 
-            VLOG(4) << "moving dictiornay state to " << dictionary_state_ << NL;
+            VLOG(4) << "moving dictiornay state to " << dictionary_state_;
             return ;
         }
         /*
@@ -324,16 +339,16 @@ public:
         - get the arc next state 
         */
 
-        discount(-1*score);
+        update_score(score);
         VLOG(4) << "transition " 
-                << sequence[sequence.size() - 2] << " -> " <<  sequence.back() 
-                << " exists." << NL;
+                << from << " -> " <<  to
+                << " exists.";
         auto FSTZERO = fst::TropicalWeight::Zero();
         auto next_state = matcher_ptr_->Value().nextstate;
         auto next_state_weight = dictionary_ptr_->Final(next_state);
         bool is_final_state = next_state_weight != FSTZERO;
         if (!is_final_state) {
-            std::cout << "moving dictionary_state_ forward" << std::endl;
+            VLOG(5) << "moving dictionary_state_ forward";
             dictionary_state_ = next_state;
             /*
             In this application, a full word is formed when the | token is reached. This 
@@ -348,7 +363,7 @@ public:
             VLOG(4) << sequence.back() 
             << " marks the end of this word"
             << " moving the dictionary state to " 
-            << dictionary_state_ << NL;
+            << dictionary_state_;
         }
 
         return;
@@ -358,7 +373,7 @@ public:
         return (sequence.back() == separator_token);
     }
 
-    std::vector<std::string> get_ngrams(size_t order, std::string padding = "</s>"){
+    std::vector<std::string> get_ngrams(size_t order, std::string padding = "<s>"){
         /*
         consturct ngram of "order"
         - get the last word index
@@ -406,7 +421,7 @@ public:
                 std::string sequence, 
                 int order,
                 const char separator_token = ' ', 
-                std::string padding = "</s>",
+                std::string padding = "<s>",
                 posIndex sentence_end = -1 ){
         /*
         reverse_shift: poseIndex (alias for int), describes where the end of the sentence in a seqeunce 

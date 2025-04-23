@@ -26,7 +26,7 @@ struct DecodingInfo{
     float alpha = 10; // score = ctc_score + alpha x lm_score
     char word_delimiter = '|';  
     int lm_order = 3; // 
-    std::string sentence_start_token = "</s>";
+    std::string sentence_start_token = "<s>";
 
     // getters 
     std::tuple<int, int> get_ctc_score_limits(){
@@ -72,21 +72,20 @@ public:
         - the beam width 
     */
     ctcDecoder(const std::string& path_to_tokens, 
-               int num_beams, LexiconFst& fst,
+               int num_beams, 
+               const fs::path& path_to_fst,
                const fs::path& path_to_lm_model);
-    ctcDecoder(const std::string& path_to_tokens, int num_beams, LexiconFst& fst);
-    ctcDecoder(const std::string& path_to_tokens, std::string path_to_fst);
     ctcDecoder(const std::string& path_to_tokens, int num_beams);
-    ctcDecoder(const std::string& path_to_tokens, LexiconFst& fst); //FIXME: Am I usign this?
+
     
     ~ctcDecoder();
 
     // top level 
-    void decode_step(const torch::Tensor& emmission);
+    void decode_step(torch::Tensor& emmission);
     std::vector<beam::ctcBeam> decode_sequence(torch::Tensor& emmissions);
 
     // main steps
-    void expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emmission);
+    void expand_beam(const beam::ctcBeam& beam, torch::Tensor& emmission);
     void reject_beam(beam::ctcBeam& beam);
     void update_top_beams();
     std::vector<beam::ctcBeam> get_top_beams();
@@ -100,8 +99,9 @@ public:
 private:
     // settings related 
     void read_tokens_file(const std::string& path_to_tokens);
-    void set_fst(LexiconFst& fst);
+    bool set_beams_dictionary(const fs::path& path_to_fst);
     bool set_lm(const fs::path& path_to_ngram_model);
+    
     // functional (beams)
     void penalize_beam(beam::ctcBeam& beam);
     void init_beams();

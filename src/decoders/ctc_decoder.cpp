@@ -3,13 +3,21 @@
 #include "decoders/ctc_decoder.hpp"
 #include "utils/my_utils.hpp"
 #include "utils/fst_glog_safe_log.hpp"
+#include <sstream>
 
 // convenience log warning at certain verbosity level 
 #define VLOG_WARNING(verboselevel) if (VLOG_IS_ON(verboselevel)) LOG(WARNING)
 
+float OOV_PENALTY = 1000;
+
+using namespace asr;
+
+#define pngram(ngram) for (const auto& word : ngram) std::cout << word << "-"
 
 // construcotrs 
-ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams = 10) : _max_num_beams(num_beams), _beams_map{_max_num_beams}{
+ctcDecoder::ctcDecoder(const std::string& path_to_tokens,
+        int num_beams = 10) : _max_num_beams(num_beams),
+                              _beams_map{_max_num_beams}{
     DLOG(INFO) << "[ctcDecoder/constructor]: instance created";
     read_tokens_file(path_to_tokens);
     _beams_map.set_beams_width(_max_num_beams);
@@ -17,9 +25,16 @@ ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams = 10) : 
 }
 
 
-ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams, 
-    LexiconFst& fst, const fs::path& path_to_lm_model) : ctcDecoder::ctcDecoder(path_to_tokens, num_beams){
-        set_fst(fst);
+ctcDecoder::ctcDecoder(const std::string& path_to_tokens, 
+                       int num_beams, 
+                       const fs::path& path_to_fst,
+                       const fs::path& path_to_lm_model) : 
+                            ctcDecoder::ctcDecoder(path_to_tokens, num_beams){
+        if (!set_beams_dictionary(path_to_fst)){
+            std::ostringstream oss;
+            oss << "failed to set the beams shared dictironary variables";
+            throw std::runtime_error(oss.str());
+        }
         if (path_to_lm_model.string() != "none"){ // if model is provided 
             LOG(INFO) << "[ctcDecoder/constructor]: language modle was provided."; 
             set_lm(path_to_lm_model);
@@ -29,13 +44,7 @@ ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams,
             LOG(WARNING) << "[ctcDecoder/constructor]: no language modle was provided."
                          << "This will decrease decoding accuracy."; 
         }
-    }
-
-ctcDecoder::ctcDecoder(const std::string& path_to_tokens, int num_beams, LexiconFst& fst) : 
-    ctcDecoder::ctcDecoder(path_to_tokens, num_beams){
-        set_fst(fst);
-    }
-
+}
 
 ctcDecoder::~ctcDecoder(){
     DLOG(INFO) << "[ctcDecoder/destructor]: instance created";
@@ -44,7 +53,31 @@ ctcDecoder::~ctcDecoder(){
 
 
 // intialization and settings related 
-void ctcDecoder::set_fst(LexiconFst& fst){_lex_fst = fst;}
+bool ctcDecoder::set_beams_dictionary(const fs::path& path_to_fst){
+    /*
+    path_to_fst: this is path to the fst representing the dictionary 
+                the implementation relies on this fst being sorted (FUTURE: can I add a check on this condition)
+    */
+    // load the dictionary fst
+    auto dictionary_ptr = fst::StdVectorFst::Read(path_to_fst.string());
+    if (!dictionary_ptr){
+        LOG(WARNING) << "[LexiconFst/load_fst]: loaded fst is empty";
+        return false;
+    }
+
+    // load the input symbol table 
+    fs::path parent_directory = path_to_fst.parent_path();
+    auto [input_symbol_table_ptr, _] = myfst::load_symbol_tables(parent_directory);
+    if (!input_symbol_table_ptr){
+        return false;
+    }
+
+    // set the shared dictionary and symbol table  
+    beam::ctcBeam::set_fst(dictionary_ptr, input_symbol_table_ptr);
+    return true;
+}
+
+
 
 
 bool ctcDecoder::set_lm(const fs::path& path_to_lm_model){
@@ -91,7 +124,7 @@ void ctcDecoder::read_tokens_file(const std::string& path_to_tokens){
 
 
 // internal steps 
-void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emission){
+void ctcDecoder::expand_beam(const beam::ctcBeam& beam, torch::Tensor& emission){
     // I am assuming that emission is (num_tokens x 1) or (num_tokens) 
     auto emmision_size = emission.sizes();
     if (emmision_size[0] != _decoding_info.idx_2_token.size()){
@@ -101,21 +134,46 @@ void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emi
         throw std::runtime_error("incompatible emission size");
     }
 
+    // convert tensor to std::vector 
+    emission = emission.contiguous();
+    auto num_elements = emission.numel();
+    std::vector<float> emission_vec(emission.data_ptr<float>(), emission.data_ptr<float>() + num_elements);
+
+    // prune the prob vector 
+    auto pruned_tokens_prob = myutils::get_pruned_log_probs(emission_vec, 1, 5);
+    
+
+
+    // loop over pruned prob
     beam::ctcBeam new_beam;
-    for (int i = 0; i < _decoding_info.idx_2_token.size(); ++i){
+    for (const auto& [i, prob_i] : pruned_tokens_prob){
         new_beam = beam;
         VLOG(5) << "[ctcDecoder/expand_beam]: token: " << _decoding_info.idx_2_token[i]
-                << ", score: " << emission[i].item<float>();
-        new_beam.update_beam(_decoding_info.idx_2_token[i], emission[i].item<float>());
+                << ", score: " << prob_i;
+        new_beam.update_beam(_decoding_info.idx_2_token[i], prob_i);
         VLOG(5) << "[ctcDecoder/expand_beam]: updated sequence: " << new_beam.get_sequence();
-        if (new_beam.is_full_word_fromed()){
+        if (new_beam.is_full_word_fromed()){ 
+            /*
+            Note:decode_sequence
+            With the new modifications to beam, adding a dictionary to the beam, it is not 
+            required to check the validity of a word when it is formed. This is doen 
+            by the beam now. If the fst is not set in the ctc decoder as it is own memebr
+            i.e. not part of the beam, I will get a segmenation fault as I will be trying to
+            access something that does not exist.
+            
+            For now (deugging), I will leave this functionality as it is. I will 
+            have to set the the fst explicilty first. 
+            */
             auto last_word = new_beam.get_last_word();
             VLOG(5) << "[ctcDecoder/expand_beam]: word is formed: " << last_word;
-            if (!is_word_valid(last_word)){ 
-                // reject/penalize this beam 
-                VLOG(6) << "[ctcDecoder/expand_beam]: " << last_word 
-                        << " is not valid. Penalizing this beam.";
-                penalize_beam(new_beam); 
+            // if (!is_word_valid(last_word)){ 
+            //     // reject/penalize this beam 
+            //     VLOG(6) << "[ctcDecoder/expand_beam]: " << last_word 
+            //             << " is not valid. Penalizing this beam.";
+            //     penalize_beam(new_beam); 
+
+            // }
+            if (false){
 
             }
             else{ // word is formed get the lm score 
@@ -134,19 +192,27 @@ void ctcDecoder::expand_beam(const beam::ctcBeam& beam, const torch::Tensor& emi
                         _decoding_info.lm_order,
                         new_beam.separator_token,
                         _decoding_info.sentence_start_token, 
-                        sentence_end - 1 // Note:
+                        sentence_end // - 1 // Note:
                     ); 
-                    // println("sequence is: ", sentence);
-                    // println("end of sentence: ", sentence_end);
-                    // printngram(ngram);
-                    // newline;
+                    
+
                     lm_score = compute_lm_score(ngram);
+                    
+
                     VLOG(5) << "[ctcDecoder/expand_beam]: sentence: " << sentence
                             << ", lm score: "  << lm_score
                             << ", tot score: " << get_weighted_score(new_beam.get_score(), lm_score); 
                 }
-                float weighted_score = get_weighted_score(new_beam.get_score(), lm_score); 
-                new_beam.set_score(weighted_score); // update beam with the empty token (will not change ) 
+                if (lm_score >= 0 ) {
+                    float weighted_score = get_weighted_score(new_beam.get_score(), lm_score); 
+                    new_beam.set_score(weighted_score); // update beam with the empty token (will not change ) 
+                    VLOG(5) << "lm score: "  << lm_score
+                            << ", tot score: " << get_weighted_score(new_beam.get_score(), lm_score);
+                }
+                else{
+                    new_beam.zero_out_score(); // Note: I am already doing this in the beam itslef 
+                    VLOG(5) << "zeroing out socre, out of vocab";
+                } 
             }
         }
         update_beams_map(new_beam);   
@@ -261,7 +327,7 @@ std::vector<beam::ctcBeam> ctcDecoder::get_top_beams(){
 
 
 // decoding interface 
-void ctcDecoder::decode_step(const torch::Tensor& emission){
+void ctcDecoder::decode_step(torch::Tensor& emission){
     if (_top_beams.empty()){
         DLOG(WARNING) << "[ctcDecoder/decode_step]: top beams are empty.";
         VLOG_WARNING(6) << "[ctcDecoder/decode_step]: top beams are empty. "
@@ -286,7 +352,7 @@ void ctcDecoder::decode_step(const torch::Tensor& emission){
     // print updated top beams
     VLOG(5) << "[ctcDecoder/decode_step]: top beams are: \n";
     for (size_t i = 0; i < _top_beams.size(); ++i){
-        VLOG(5) << i << ": " << _top_beams[i].get_sequence(); 
+        VLOG(5) << i << ": " << _top_beams[i].get_sequence() << ", score: " << _top_beams[i].get_score(); 
     }
 }
 

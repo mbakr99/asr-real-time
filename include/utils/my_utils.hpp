@@ -9,8 +9,11 @@
 #include <chrono>
 #include <thread>
 #include <queue>
+#include <fst/fstlib.h>
+#include <filesystem>
 
 
+namespace fs = std::filesystem;
 
 
 
@@ -163,13 +166,33 @@ namespace asr{
         double map_to_range(const double& val, const double& min_val, 
                             const double& max_val, const double& min_range, 
                             const double& max_range);
+        /*
+        The next function "get_pruned_log_probs" is based on 
+        parlance https://github.com/parlance/ctcdecode
+        */
+        template <typename T1, typename T2>
+        bool pair_comp_second_rev(const std::pair<T1, T2> &a,
+                                const std::pair<T1, T2> &b) {
+            return a.second > b.second;
         }
+        std::vector<std::pair<size_t, double>> get_pruned_log_probs(
+            const std::vector<float> &prob_step,
+            double cutoff_prob,
+            size_t cutoff_top_n);
+        } //namespace myutils 
     namespace stringmanip{
         std::vector<std::string> break_to_words(const std::string& sentence, char word_delimiter);
         std::vector<std::string> break_to_words(const std::string& sentence);
         void upper_case(std::string& sequence);
-    }
-}
+    } //namespace stringmanip
+
+    namespace myfst{
+        typedef fst::SymbolTable SymbolTable;
+         // for external use 
+        std::pair<SymbolTable*, SymbolTable*> load_symbol_tables(const fs::path& target_directory);
+        std::pair<SymbolTable*, SymbolTable*> load_symbol_tables(const fs::path& isymbols_path, const fs::path& osymbols_path);
+    } //namespace myfst
+} //namespace asr
 
 
 
