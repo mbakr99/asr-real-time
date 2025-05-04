@@ -115,6 +115,8 @@ float nGramsModelWrapper::score_sentence(std::vector<std::string> sentence, scor
       lm::WordIndex word_index = ngram_model_ptr_->BaseVocabulary().Index(sentence[i]);
       // encounter OOV
       if (word_index == 0) {
+        VLOG(5) << "[nGramsModelWrapper/score_sentence]: "
+                << "index not found for " <<  sentence[i];
         return -OOV_PENALTY_;
       }
       cond_prob = ngram_model_ptr_->BaseScore(&state, word_index, &out_state);

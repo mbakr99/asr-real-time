@@ -9,12 +9,13 @@
 #include <iostream>
 #include <algorithm>
 #include <fst/fstlib.h>
-#include "utils/my_utils.hpp"
 #include "utils/fst_glog_safe_log.hpp"
 
 
 
 extern float OOV_PENALTY;
+const double INF_DOUBLE  = std::numeric_limits<double>::max();
+const float  INF_FLT     = std::numeric_limits<float>::max();
 
 // #define VLOG(level) std::cout
 // #define print(expr, val) std::cout << expr << val
@@ -49,10 +50,12 @@ struct wordWindow{
 
 
 struct Beam{
+    
     // data
     wordWindow last_word_window{0,0};
     float sequence_score;
     std::vector<char> sequence; 
+
     
     
 
@@ -165,6 +168,25 @@ struct  beamGreaterThan{
     }
 };
 
+struct beamPtrLessThan
+{
+    bool operator()(const Beam* left_beam, const Beam* right_beam) const { 
+        if (!left_beam || !right_beam) {
+            throw std::runtime_error("beamPtrLessThan: trying to access nullptr");
+        }
+        return *left_beam < *right_beam; 
+    }
+};
+
+struct  beamPtrGreaterThan{
+    bool operator()(const Beam* left_beam, const Beam* right_beam) const {
+        if (!left_beam || !right_beam) {
+            throw std::runtime_error("beamPtrLessThan: trying to access nullptr");
+        }
+        return *left_beam > *right_beam; 
+    }
+};
+
 struct beamHash{
     std::size_t operator()(const Beam& beam){
         return std::hash<std::string>{}(beam.get_sequence<std::string>());
@@ -187,8 +209,6 @@ typedef fst::SymbolTable SymbolTable;
 
 struct ctcBeam : public Beam{
 private:
-    
- 
 
     // fst-related data 
     static std::unique_ptr<FSTDICT> dictionary_ptr_;
@@ -203,16 +223,37 @@ private:
     static std::unique_ptr<SymbolTable> input_symbol_table_; // static inline
 
 public:
-    // data
-    char epsilon_token   = '-';
-    char separator_token = '|'; 
 
-    
+
+    // 
+    char separator_token = '|';
+
+    // new score 
+    double prob_nb_cur, prob_b_cur, 
+    prob_nb_prev, prob_b_prev; 
+    double score;
     
     // constructor
-    ctcBeam() : dictionary_state_(0) {++instances_count_;}
-    ctcBeam(std::string some_sequence, float score) : 
-        Beam(some_sequence, score), dictionary_state_(0) {++instances_count_;}
+    ctcBeam() : dictionary_state_(0){
+        ++instances_count_;
+        prob_nb_cur  = -INF_DOUBLE;
+        prob_b_cur   = -INF_DOUBLE;
+        prob_nb_prev = -INF_DOUBLE;
+        prob_b_prev  = -INF_DOUBLE;
+        score        = -INF_DOUBLE;
+
+    }
+
+    
+    ctcBeam(std::string some_sequence) : 
+        Beam(some_sequence, 0), dictionary_state_(0) {
+            ++instances_count_;
+            prob_nb_cur  = -INF_DOUBLE;
+            prob_b_cur   = -INF_DOUBLE;
+            prob_nb_prev = -INF_DOUBLE;
+            prob_b_prev  = -INF_DOUBLE;
+            score        = -INF_DOUBLE;
+        }
 
     ctcBeam(const ctcBeam& other) : Beam(other) {
         /*
@@ -221,6 +262,22 @@ public:
         // copy the fst related info
         this->dictionary_state_ = other.dictionary_state_;
         ++instances_count_;
+
+        this->last_word_window = other.last_word_window;
+
+        this->prob_nb_cur  = other.prob_nb_cur; // Note: I am not sure about copying the current scores
+        this->prob_b_cur   = other.prob_b_cur;
+        this->prob_nb_prev = other.prob_nb_prev;
+        this->prob_b_prev  = other.prob_b_prev;
+        this->score        = other.score;
+    }
+
+    ctcBeam* Copy(){ 
+        ctcBeam* new_copy = new ctcBeam{this->get_sequence()};
+        new_copy->dictionary_state_ = this->dictionary_state_;
+        // new_copy->prob_b_prev  = this->prob_b_prev;
+        // new_copy->prob_nb_prev = this->prob_nb_prev;
+        return new_copy;
     }
 
     ~ctcBeam(){
@@ -245,229 +302,43 @@ public:
         input_symbol_table_ = std::unique_ptr<SymbolTable>(symbol_table);
     }
 
-    // void set_dictionary(FSTDICT* fst_ptr){dictionary_ptr_ = std::make_shared<FSTDICT>(fst_ptr);} 
+
+    dictState get_dict_state(){return dictionary_state_;}
+
+    ctcBeam* get_new_beam(char symbol);
     
-    // void set_mathcer(FSTMATCH* matcher_ptr){matcher_ptr_ = std::make_shared<FSTMATCH>(matcher_ptr);}
+    double get_score() const {return score;}
 
-    // void set_input_symbol_table(fst::SymbolTable& symbol_table){input_symbol_table_ = symbol_table;}
-
-
-    // operators 
-    void set_epsilon_token(char symbol){
-        epsilon_token = symbol;
+    std::pair<double, double> get_prev_probs() const {
+        return std::make_pair(prob_b_prev, prob_nb_prev);
     }
 
-    char get_epsilon_token() const {return epsilon_token;}
-
-    void update_beam(char symbol, float score){
-        if (sequence.empty()){ // first char
-            extend_sequence(symbol);
-            update_score(score);
-            return;
-        }
-        else{ 
-            if (sequence.back() == epsilon_token){
-                remove_last_char();
-                extend_sequence(symbol);
-            }
-            else { // non-epsilon
-                if (sequence.back() != symbol){ // ctc rule #1: remove repetitive symbol 
-                    extend_sequence(symbol);
-                }
-                else { // (sequence.back() == symbol) repetitive char does not change the sequence but adds to the score
-                    update_score(score);
-                    VLOG(4) << "[ctcBeam/update_beam]: repititive charchater, moving to next charchater";
-                    return ;
-                }   
-            }
-
-        
-        }
-
-        // sequence could have epsilon at the end (dictionary does not have epsilon)
-        if (sequence.back() == epsilon_token){
-            update_score(score);
-            VLOG(4) << "[ctcBeam/update_beam]: epsilon charchater, moving to next charchater";
-            return ; // epsilon does not change the sequence 
-        }
-
-        // check if dictionary allows this sequence 
-        // int char_index = char2index_[sequence.back()]; 
-        /* 
-        Note: the logic of my implementation passes the past letter in the sequence to thesymbol table
-        and not the char to be added "symbol". Why, becuase, the sequence is updated using the ctc rules first.  
-        */
-        auto char_index = input_symbol_table_->Find(std::string_view(&sequence.back(),1)); 
-        matcher_ptr_->SetState(dictionary_state_);
-        bool found = matcher_ptr_->Find(char_index);
-
-        // formatting for vlog // FIXME: this is to be removed after debugging 
-        char from, to;
-        if (sequence.size() <2){
-            from = ' ';
-        }
-        else{
-            from = sequence[sequence.size() - 2]; 
-        }
-        to = sequence.back();
-        VLOG(4) << "[ctcBeam/update_beam]: moving from charachter: " 
-                << from << " to: " << to; 
-        // print arcs going out of current_state_
-        fst::StdArc arc;
-        // for (fst::ArcIterator<fst::StdVectorFst> aiter(*dictionary_ptr_, dictionary_state_); !aiter.Done(); aiter.Next()){
-        //     arc = aiter.Value(); FIXME:
-        //     std::cout << >"arc input label: " << arc.ilabel << std::endl;
-        // }
-        if (!found){ // word not in dictionary >
-            VLOG(5) << "penalizing beam: " << get_sequence() << " for oov!";
-            zero_out_score();
-            // discount(OOV_PENALTY);  misses up with the range if variables and thus the scale
-        /*
-        If the word is not in dictionary set the dictionary_state_ to the root of the fst
-        for next search. 
-        */
-            VLOG(4) << "[ctcBeam/update_beam]: the transition " 
-                    << from << " -> " << to
-                    << " was not found";
-            dictionary_state_ = dictionary_ptr_->Start(); 
-            VLOG(4) << "moving dictiornay state to " << dictionary_state_;
-            return ;
-        }
-        /*
-        If the mathcer found an arc representing the transition:
-        - update the score
-        - get the arc next state 
-        */
-
-        update_score(score);
-        VLOG(4) << "transition " 
-                << from << " -> " <<  to
-                << " exists.";
-        auto FSTZERO = fst::TropicalWeight::Zero();
-        auto next_state = matcher_ptr_->Value().nextstate;
-        auto next_state_weight = dictionary_ptr_->Final(next_state);
-        bool is_final_state = next_state_weight != FSTZERO;
-        if (!is_final_state) {
-            VLOG(5) << "moving dictionary_state_ forward";
-            dictionary_state_ = next_state;
-            /*
-            In this application, a full word is formed when the | token is reached. This 
-            corresponds to a final state in the fst. If this logic does not hold a separate
-            method that checks word formation should be used (is_full_wrod_formed())  
-            */
-            last_word_window.shift(last_word_window.word_end, size());
-        }
-        else {
-        
-            dictionary_state_ = dictionary_ptr_->Start();   
-            VLOG(4) << sequence.back() 
-            << " marks the end of this word"
-            << " moving the dictionary state to " 
-            << dictionary_state_;
-        }
-
-        return;
+    std::pair<double, double> get_parent_probs() const { // both this and the above do the same, I just find the name convenient
+        return std::make_pair(prob_b_prev, prob_nb_prev);
     }
+
+
+    std::pair<double, double> get_current_probs() const {
+        return std::make_pair(prob_b_cur, prob_nb_cur);
+    }
+
+    void update_score();
+
 
     bool is_full_word_fromed(){
         return (sequence.back() == separator_token);
     }
 
-    std::vector<std::string> get_ngrams(size_t order, std::string padding = "<s>"){
-        /*
-        consturct ngram of "order"
-        - get the last word index
-        - reverse the sequence 
-        - from the end of last word start adding words to ngrams 
-        - ensure ngram order integrity 
-        */
-        const std::string sequence = get_sequence<std::string>();
-        auto last_word_end = std::get<1>(last_word_window.get_window());
-        int reverse_shift  = sequence.size() - last_word_end;
-        
-        std::string word;
-        std::vector<std::string> ngram;
-        for (auto it = sequence.rbegin() + reverse_shift; it != sequence.rend(); ++it){
-            if (*it == separator_token) {
-                std::reverse(word.begin(), word.end());
-                ngram.push_back(word);
-                word.clear();
-                continue;
-            }
-            if (it == sequence.rend() - 1){
-                word += *it;
-                std::reverse(word.begin(), word.end());
-                ngram.push_back(word);
-                word.clear();
-            }
-
-            word += *it;
-            if (ngram.size() >= order){
-                break;
-            }
-        }
-
-        // fill with </s> if ngram size is less than order
-        for (size_t i = ngram.size(); i < order; ++i){
-            ngram.push_back(padding);
-        } 
-        
-        // reverse the order of the ngram since 
-        std::reverse(ngram.begin(), ngram.end());
-        return ngram;
-    }
+    std::vector<std::string> get_ngrams(size_t order, 
+        const char separator_token,
+        std::string padding = "<s>");
 
     static std::vector<std::string> generate_ngrams(
                 std::string sequence, 
                 int order,
                 const char separator_token = ' ', 
                 std::string padding = "<s>",
-                posIndex sentence_end = -1 ){
-        /*
-        reverse_shift: poseIndex (alias for int), describes where the end of the sentence in a seqeunce 
-        for example in "i play footb", the last word is not compete and thus, you usually want to get 
-        the ngram for "i play" in this case the reverse_shift is 6 moving the end of the sequence -virtually- 
-        to the "y" in "i play"   
-        */
-        if (sentence_end == -1) sentence_end = sequence.size();
-        posIndex reverse_shift = sequence.size() - sentence_end;
-            
-        std::string word;
-        std::vector<std::string> ngram;
-        for (auto it = sequence.rbegin() + reverse_shift; it != sequence.rend(); ++it){
-            if (*it == separator_token) {
-                std::reverse(word.begin(), word.end());
-                ngram.push_back(word);
-                word.clear();
-                continue;
-            }
-            if (it == sequence.rend() - 1){
-                word += *it;
-                std::reverse(word.begin(), word.end());
-                ngram.push_back(word);
-                word.clear();
-            }
-
-            word += *it;
-            if (ngram.size() >= order){
-                break;
-            }
-        }
-
-        // fill with </s> if ngram size is less than order
-        for (size_t i = ngram.size(); i < order; ++i){
-            ngram.push_back(padding);
-        } 
-        
-        // reverse the order of the ngram since 
-        std::reverse(ngram.begin(), ngram.end());
-        return ngram;
-    }
-
-    void set_word_separator_token(char new_separator){separator_token = new_separator;} // set the token that marks new word 
-
-
-
+                posIndex sentence_end = -1 );
 
 };
 

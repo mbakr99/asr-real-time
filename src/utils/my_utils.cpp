@@ -11,6 +11,7 @@
 
 
 
+
 // Helper function to print bytes
 void printBytes(const char* data, size_t size) {
     std::cout << "Bytes: ";
@@ -136,35 +137,57 @@ namespace asr {
                             const double& max_range){
             return ( (val - min_val) / (max_val - min_val) ) * (max_range - min_range) + min_range;
         }
+
         std::vector<std::pair<size_t, double>> get_pruned_log_probs(
             const std::vector<float> &prob_step,
             double cutoff_prob,
-            size_t cutoff_top_n){
-                std::vector<std::pair<size_t, double>> prob_idx;
-                for (size_t i = 0; i < prob_step.size(); ++i) {
-                    prob_idx.push_back(std::pair<size_t, double>(i, prob_step[i]));
-                }
-                // pruning of vacobulary
-                size_t cutoff_len = prob_step.size();
-                if (cutoff_prob < 1.0 || cutoff_top_n < cutoff_len) {
-                    std::sort(
-                        prob_idx.begin(), prob_idx.end(), pair_comp_second_rev<int, double>);
-                    if (cutoff_prob < 1.0) {
-                    double cum_prob = 0.0;
-                    cutoff_len = 0;
-                    for (size_t i = 0; i < prob_idx.size(); ++i) {
-                        cum_prob += prob_idx[i].second;
-                        cutoff_len += 1;
-                        if (cum_prob >= cutoff_prob || cutoff_len >= cutoff_top_n) break;
-                    }
-                    }else{
-                    cutoff_len = cutoff_top_n;
-                    }
-                    prob_idx = std::vector<std::pair<size_t, double>>(
-                        prob_idx.begin(), prob_idx.begin() + cutoff_len);
-                }
-                return prob_idx;
+            size_t cutoff_top_n,
+            int log_input) {
+          std::vector<std::pair<int, double>> prob_idx;
+          double log_cutoff_prob = log(cutoff_prob);
+          for (size_t i = 0; i < prob_step.size(); ++i) {
+            prob_idx.push_back(std::pair<int, double>(i, prob_step[i]));
+          }
+          // pruning of vacobulary
+          size_t cutoff_len = prob_step.size();
+          if (log_cutoff_prob < 0.0 || cutoff_top_n < cutoff_len) {
+            std::sort(
+                prob_idx.begin(), prob_idx.end(), pair_comp_second_rev<int, double>);
+            if (log_cutoff_prob < 0.0) {
+              double cum_prob = 0.0;
+              cutoff_len = 0;
+              for (size_t i = 0; i < prob_idx.size(); ++i) {
+                cum_prob = log_sum_exp(cum_prob, log_input ? prob_idx[i].second : log(prob_idx[i].second) );
+                cutoff_len += 1;
+                if (cum_prob >= cutoff_prob || cutoff_len >= cutoff_top_n) break;
+              }
+            }else{
+              cutoff_len = cutoff_top_n;
             }
+            prob_idx = std::vector<std::pair<int, double>>(
+                prob_idx.begin(), prob_idx.begin() + cutoff_len);
+          }
+          std::vector<std::pair<size_t, double>> log_prob_idx;
+          for (size_t i = 0; i < cutoff_len; ++i) {
+            log_prob_idx.push_back(std::pair<int, double>(
+                prob_idx[i].first, log_input ? prob_idx[i].second : log(prob_idx[i].second + NUM_FLT_MIN))); 
+          }
+          return log_prob_idx;
+        }
+
+
+        bool prefix_compare(const beam::ctcBeam* x, const beam::ctcBeam* y) {
+            if (x->score == y->score) {
+            if (x->get_sequence().back() == y->get_sequence().back()) {
+                return false;
+            } else {
+                return (x->get_sequence().back() < y->get_sequence().back());
+            }
+            } else {
+            return x->score > y->score;
+            }
+        }
+        
     } // namespace myutils
 
     namespace stringmanip{

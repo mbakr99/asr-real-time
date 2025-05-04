@@ -84,11 +84,11 @@ int main(int argc, char* argv[]){
     auto emissions = torch_model.pass_forward(short_audio);
 
 
-   
+    
     ctcDecoder decoder(tokens_path, 15, fst_path, lm_path);
     float alpha = std::stof(argv[3]); // set alpha 
     decoder.set_lm_weight(alpha);
-    std::vector<beam::ctcBeam> decoding_result;
+    std::vector<beam::ctcBeam*> decoding_result;
     bool result_set = false;
     if (emissions.has_value()){
         decoding_result = decoder.decode_sequence(emissions.value());
@@ -106,8 +106,8 @@ int main(int argc, char* argv[]){
         int i = 0;
         for (const auto& beam : top_beams){
             ++i;
-            std::cout << "beam " << i << ": " <<  beam.get_sequence() << "\n"
-                      << "score: " << beam.get_score() << std::endl;
+            std::cout << "beam " << i << ": " <<  beam->get_sequence() << "\n"
+                      << "score: " << beam->get_score() << std::endl;
         }
 
     }

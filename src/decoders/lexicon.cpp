@@ -198,10 +198,11 @@ LexiconFst::LexiconFst() : _root_trie_node(std::make_shared<LexFstTrieNode>()){
 }
 
 
-LexiconFst::LexiconFst(const std::string lexicon_file_path) : _lexicon_path(lexicon_file_path), 
-                                                        _root_trie_node(std::make_shared<LexFstTrieNode>()),
-                                                        _flag_output_word_symbol(false)
-                                                        {
+LexiconFst::LexiconFst(const std::string lexicon_file_path) : 
+    _lexicon_path(lexicon_file_path), 
+    _root_trie_node(std::make_shared<LexFstTrieNode>()),
+    _flag_output_word_symbol(false){
+
     DLOG(INFO) << "[LexiconFst/constuctor]: Instance created.";
     _lexicon_file.open(_lexicon_path);
 

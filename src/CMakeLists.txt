@@ -40,6 +40,7 @@ add_executable(test ${CMAKE_CURRENT_SOURCE_DIR}/decoders/test.cpp
                     ${CMAKE_CURRENT_SOURCE_DIR}/models/torch_script_model.cpp
                     ${CMAKE_CURRENT_SOURCE_DIR}/models/ngrams_model.cpp
                     ${CMAKE_CURRENT_SOURCE_DIR}/utils/my_utils.cpp
+                    ${CMAKE_CURRENT_SOURCE_DIR}/decoders/beam.cpp
                     )
 
 target_link_libraries(test PRIVATE glog::glog
@@ -58,10 +59,10 @@ target_link_libraries(setup PRIVATE glog::glog
 
 
 # add_executable(test_sree3 ${CMAKE_CURRENT_SOURCE_DIR}/utils/test_sree3.cpp
-#     ${CMAKE_CURRENT_SOURCE_DIR}/decoders/lexicon.cpp
+#     ${CMAKE_CURRENT_SOURCE_DIR}/models/torch_script_model.cpp
 #     ${CMAKE_CURRENT_SOURCE_DIR}/utils/my_utils.cpp)
 
-# target_link_libraries(test_sree3 kenlm::kenlm glog::glog ${OpenFst})
+# target_link_libraries(test_sree3 kenlm::kenlm glog::glog ${OpenFst} ${TORCH_LIBRARIES})
 
 # add_executable(test_asra3 ${CMAKE_CURRENT_SOURCE_DIR}/utils/test_asra3.cpp
 # ${CMAKE_CURRENT_SOURCE_DIR}/models/torch_script_model.cpp

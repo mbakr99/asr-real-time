@@ -11,11 +11,16 @@
 #include <queue>
 #include <fst/fstlib.h>
 #include <filesystem>
+#include <limits>
+#include "decoders/beam.hpp"
+
+
+
 
 
 namespace fs = std::filesystem;
 
-
+const float NUM_FLT_MIN  = std::numeric_limits<float>::min();
 
 // For reading wav files
 #pragma pack(push, 1)
@@ -167,7 +172,7 @@ namespace asr{
                             const double& max_val, const double& min_range, 
                             const double& max_range);
         /*
-        The next function "get_pruned_log_probs" is based on 
+        The next two functions "get_pruned_log_probs, log_sum_exp" are from 
         parlance https://github.com/parlance/ctcdecode
         */
         template <typename T1, typename T2>
@@ -175,11 +180,24 @@ namespace asr{
                                 const std::pair<T1, T2> &b) {
             return a.second > b.second;
         }
+
         std::vector<std::pair<size_t, double>> get_pruned_log_probs(
             const std::vector<float> &prob_step,
             double cutoff_prob,
-            size_t cutoff_top_n);
-        } //namespace myutils 
+            size_t cutoff_top_n,
+            int log_input);
+
+        template <typename T>
+        T log_sum_exp(const T &x, const T &y) {
+            static T num_min = -std::numeric_limits<T>::max();
+            if (x <= num_min) return y;
+            if (y <= num_min) return x;
+            T xmax = std::max(x, y);
+            return std::log(std::exp(x - xmax) + std::exp(y - xmax)) + xmax;
+        }
+
+        bool prefix_compare(const beam::ctcBeam* x, const beam::ctcBeam* y);
+    } //namespace myutils 
     namespace stringmanip{
         std::vector<std::string> break_to_words(const std::string& sentence, char word_delimiter);
         std::vector<std::string> break_to_words(const std::string& sentence);

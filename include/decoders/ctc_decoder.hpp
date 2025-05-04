@@ -23,8 +23,10 @@ struct DecodingInfo{
     int num_tokens = 0;
     int invalid_word_penalty = 1000; 
     ctcScoreSettings ctc_score_info{};
-    float alpha = 10; // score = ctc_score + alpha x lm_score
+    float alpha = 0.6; // score = ctc_score + alpha x lm_score
+    float beta  = 2; // word 
     char word_delimiter = '|';  
+    char blank_token    = '-';
     int lm_order = 3; // 
     std::string sentence_start_token = "<s>";
 
@@ -44,21 +46,15 @@ struct DecodingInfo{
 class ctcDecoder{
 
 private:
-    beam::BeamsMapWrapper _beams_map;
-    std::priority_queue<
-        beam::ctcBeam, 
-        std::vector<beam::ctcBeam>,
-        beam::beamGreaterThan> _beams_max_heap;
-    int _max_num_beams;
-    std::vector<beam::ctcBeam> _top_beams;
-    LexiconFst _lex_fst; 
+    size_t _max_num_beams;
+    beam::BeamPtrMap _beams_map;
+    std::vector<beam::ctcBeam*> _top_beams;
     DecodingInfo _decoding_info;
     ngrams::nGramsModelWrapper _ngrams_model; // this need the path to the model to be set
     bool _use_lm_model_flag = false; // FUTURE: I don't like the idea of having to repeatedly check a use
                                 // condition that is static throughout the application lifetime
                                 // I might use a strategy patten or a warpper function 
-    
-    
+
 
 public:
     /*
@@ -72,26 +68,25 @@ public:
         - the beam width 
     */
     ctcDecoder(const std::string& path_to_tokens, 
-               int num_beams, 
+               size_t num_beams, 
                const fs::path& path_to_fst,
                const fs::path& path_to_lm_model);
-    ctcDecoder(const std::string& path_to_tokens, int num_beams);
+    ctcDecoder(const std::string& path_to_tokens, size_t num_beams);
 
     
     ~ctcDecoder();
 
     // top level 
     void decode_step(torch::Tensor& emmission);
-    std::vector<beam::ctcBeam> decode_sequence(torch::Tensor& emmissions);
+    std::vector<beam::ctcBeam*> decode_sequence(torch::Tensor& emmissions);
 
     // main steps
-    void expand_beam(const beam::ctcBeam& beam, torch::Tensor& emmission);
-    void reject_beam(beam::ctcBeam& beam);
+    void expand_beam(beam::ctcBeam* beam, 
+        torch::Tensor& emmission);
     void update_top_beams();
-    std::vector<beam::ctcBeam> get_top_beams();
+    std::vector<beam::ctcBeam*> get_top_beams();
     void clear_top_beams();
-    bool is_word_valid(const std::string& word);
-    
+  
     // control decocding settings
     void set_lm_weight(float new_alpha){_decoding_info.alpha = new_alpha;}
 
@@ -103,14 +98,8 @@ private:
     bool set_lm(const fs::path& path_to_ngram_model);
     
     // functional (beams)
-    void penalize_beam(beam::ctcBeam& beam);
     void init_beams();
-    void update_beams_map(const beam::ctcBeam& beam); 
-    void clear_beams_map();
-    void scale_scores(const int& lower_range, const int& upper_range);
-    void convert_map_to_min_heap();
-    void clear_beams_min_heap();
-    void init_beams_map_with_top_beams();
+
     // functional (lm)
     float compute_lm_score(const std::vector<std::string>& ngram);
     inline float get_weighted_score(const float& ctc_score, const float& lm_score);

@@ -6,6 +6,7 @@
 #include <vector>
 #include <algorithm>
 #include <optional>
+#include <set>
 #include "decoders/beam.hpp"
 #include "utils/my_utils.hpp"
 #include "utils/fst_glog_safe_log.hpp"
@@ -15,6 +16,78 @@
 using namespace asr;
 
 namespace beam{
+
+
+class BeamPtrMap{
+/*
+A class to store unique beams. When a new beam is added
+the class checks if the beam's prefix exists or not.
+If it exists, the p_b, and p_nb of the new beam is added
+to the existing and then it is deleted. 
+*/
+private:
+    typedef std::unordered_map<std::string, ctcBeam*>::iterator iterator;
+    std::unordered_map<std::string, ctcBeam*> _beams_map;
+    std::set<ctcBeam*> _beams_to_delete;
+
+
+public:
+    void add_beam(ctcBeam* beam){
+        VLOG(5) << "[BeamPtrMap/add_beam]: adding " << beam->get_sequence() << " with address "
+                << beam << " to the map";
+        // if the element exist 
+        auto it = _beams_map.find(beam->get_sequence());
+        if (it != _beams_map.end()){
+            VLOG(5) << "[BeamPtrMap/add_beam]: similar sequence exists " << " at " << it->second;
+
+            // if new beam and existing beam point to the same memory 
+            if (it->second == beam){
+                VLOG(5) << "[BeamPtrMap/add_beam]: existing beam and new beam " 
+                        << "point to the same meory address";
+            }
+            else{ // if new beam and existing beam hold different memories, add the new to garbage collector
+                _beams_to_delete.insert(beam);
+                VLOG(5) << "added the new beam at " << beam << " to the garbage collector.";
+            }
+        }
+        else{
+            VLOG(5) << "[BeamPtrMap/add_beam]: no similar beam exists. adding new beam directly";
+            _beams_map[beam->get_sequence()] = beam;
+
+        }
+       return;
+    };
+
+    void clear(){_beams_map.clear();}
+
+    ctcBeam* find_beam(std::string sequence){
+        auto it = _beams_map.find(sequence);
+        if (it != _beams_map.end()){ // if a beam stroing the same sequence exists 
+            return it->second; // return a ptr to the beam stroing the sequence 
+        }
+        else{
+            return nullptr;
+        }
+    }
+
+    void clean_garbage(){
+        for (auto& beam_to_delete : _beams_to_delete){
+            VLOG(5) << "[BeamPtrMap/clean_garbage]: " 
+                    << "deleting beam " << beam_to_delete->get_sequence()
+                    << " at " << beam_to_delete;
+            delete beam_to_delete;
+        }
+        _beams_to_delete.clear(); // important as the delted memory might (and probably will) br used by a new variable
+    }
+
+    iterator begin(){return _beams_map.begin();}
+    
+    iterator end(){return _beams_map.end();}
+
+};
+
+
+
 
 
 class BeamsMapWrapper{
